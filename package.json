@@ -1,0 +1,22 @@
+{
+  "name": "ai-saas-factory",
+  "private": true,
+  "version": "0.1.0",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "format": "prettier --write .",
+    "db:generate": "pnpm --filter @factory/db db:generate",
+    "db:migrate": "pnpm --filter @factory/db db:migrate",
+    "db:studio": "pnpm --filter @factory/db db:studio"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "2.10.6",
+    "typescript": "^5.9.2"
+  }
+}

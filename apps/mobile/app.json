@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "AI SaaS Factory",
+    "slug": "ai-saas-factory",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": { "supportsTablet": true },
+    "android": { "adaptiveIcon": { "backgroundColor": "#09090b" } }
+  }
+}

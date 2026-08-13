@@ -1,0 +1,12 @@
+{
+  "extends": "../../packages/typescript-config/base.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowJs": true
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

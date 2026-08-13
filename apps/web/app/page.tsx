@@ -14,7 +14,8 @@ export default function HomePage() {
         <strong>AI SaaS Factory</strong>
         <div className="flex gap-3">
           <Link className="rounded-lg border border-zinc-700 px-4 py-2 text-sm" href="/pricing">Pricing</Link>
-          <Link className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black" href="/dashboard">Demo dashboard</Link>
+          <Link className="rounded-lg border border-zinc-700 px-4 py-2 text-sm" href="/sign-in">Sign in</Link>
+          <Link className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black" href="/sign-up">Get started</Link>
         </div>
       </nav>
 

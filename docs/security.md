@@ -19,3 +19,12 @@
 - billing webhook replay tests
 - AI prompt/file authorization boundaries
 - storage signed URL expiry
+
+## Identity and workspace controls (V0.2)
+
+- Email/password sessions require verified email ownership.
+- Password reset revokes existing sessions.
+- Organization invitation acceptance requires the authenticated, verified recipient.
+- Protected pages validate the full server session; the Next.js proxy is only an early redirect layer.
+- Organization-scoped actions rely on Better Auth server-side permission checks. UI role checks are convenience, not authorization.
+- Transactional email uses Resend over HTTPS and must be configured explicitly in production.

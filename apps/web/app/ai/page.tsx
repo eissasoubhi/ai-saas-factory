@@ -3,7 +3,7 @@ import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ChatPanel } from '@/components/chat-panel';
-import { allowedAiModelIds, defaultAiModelId } from '@/lib/ai-models';
+import { allowedAiModelIds, defaultAllowedAiModelId } from '@/lib/ai-models';
 import { getActiveOrganizationContext } from '@/lib/organization-access';
 
 export default async function AiPage() {
@@ -48,7 +48,7 @@ export default async function AiPage() {
 
         <ChatPanel
           initialMessages={[]}
-          modelId={defaultAiModelId()}
+          modelId={defaultAllowedAiModelId()}
           allowedModelIds={allowedModels}
         />
       </div>

@@ -139,6 +139,65 @@ export const subscription = pgTable(
   ],
 );
 
+export const conversation = pgTable(
+  'conversation',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
+    modelId: text('model_id').notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    index('conversation_org_updated_idx').on(table.organizationId, table.updatedAt),
+    index('conversation_org_archived_idx').on(table.organizationId, table.archivedAt),
+  ],
+);
+
+export const conversationMessage = pgTable(
+  'conversation_message',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id').notNull().references(() => conversation.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(),
+    content: text('content').notNull(),
+    modelId: text('model_id'),
+    providerMessageId: text('provider_message_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('conversation_message_conversation_created_idx').on(table.conversationId, table.createdAt),
+    index('conversation_message_org_created_idx').on(table.organizationId, table.createdAt),
+  ],
+);
+
+export const aiGeneration = pgTable(
+  'ai_generation',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id').notNull().references(() => conversation.id, { onDelete: 'cascade' }),
+    requestMessageId: text('request_message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
+    responseMessageId: text('response_message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
+    provider: text('provider').notNull(),
+    modelId: text('model_id').notNull(),
+    finishReason: text('finish_reason'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    totalTokens: integer('total_tokens'),
+    estimatedCostMicros: integer('estimated_cost_micros'),
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('ai_generation_org_created_idx').on(table.organizationId, table.createdAt),
+    index('ai_generation_conversation_created_idx').on(table.conversationId, table.createdAt),
+  ],
+);
+
 export const usageEvent = pgTable(
   'usage_event',
   {

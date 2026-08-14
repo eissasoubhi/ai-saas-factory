@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { safeFilename, storageConfig, storageObjectKey, validateUploadPolicy } from './index';
+import {
+  safeFilename,
+  storageConfig,
+  storageObjectKey,
+  validateStoredObject,
+  validateUploadPolicy,
+} from './index';
 
 const policy = {
   allowedContentTypes: new Set(['application/pdf', 'text/plain']),
@@ -36,6 +42,26 @@ describe('upload policy', () => {
 
   it('rejects oversized uploads', () => {
     expect(() => validateUploadPolicy({ contentType: 'text/plain', sizeBytes: 10_001 }, policy)).toThrow(/exceeds/);
+  });
+
+  it('accepts a stored object only when size and MIME match the server declaration', () => {
+    expect(
+      validateStoredObject({
+        expectedContentType: 'application/pdf',
+        expectedSizeBytes: 5_000,
+        actual: { sizeBytes: 5_000, contentType: 'application/pdf', eTag: 'etag' },
+      }),
+    ).toMatchObject({ sizeBytes: 5_000, eTag: 'etag' });
+  });
+
+  it('rejects a stored object whose actual size differs', () => {
+    expect(() =>
+      validateStoredObject({
+        expectedContentType: 'application/pdf',
+        expectedSizeBytes: 5_000,
+        actual: { sizeBytes: 5_001, contentType: 'application/pdf', eTag: null },
+      }),
+    ).toThrow(/size mismatch/);
   });
 });
 

@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "db:generate": "pnpm --filter @factory/db db:generate",
     "db:migrate": "pnpm --filter @factory/db db:migrate",
-    "db:studio": "pnpm --filter @factory/db db:studio"
+    "db:studio": "pnpm --filter @factory/db db:studio",
+    "worker:start": "pnpm --filter @factory/worker start"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

@@ -11,7 +11,7 @@ import {
 } from '@factory/db';
 import { entitlement } from '@factory/entitlements';
 import { streamText, type ModelMessage } from 'ai';
-import { estimateAiCostMicros } from '@/lib/ai-pricing';
+import { estimateAiCostMicros, parseModelPricingJson } from '@/lib/ai-pricing';
 import { resolveAiModel } from '@/lib/ai-models';
 import { auth } from '@/lib/auth';
 
@@ -72,6 +72,16 @@ export async function POST(request: Request) {
   }
   if (resolvedModel.provider === 'openai' && !process.env.OPENAI_API_KEY) {
     return Response.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 503 });
+  }
+
+  let pricing: ReturnType<typeof parseModelPricingJson>;
+  try {
+    pricing = parseModelPricingJson(process.env.AI_MODEL_PRICING_JSON);
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : 'Invalid AI pricing configuration.' },
+      { status: 503 },
+    );
   }
 
   const snapshot = await getSubscriptionForOrganization(organizationId);
@@ -137,6 +147,7 @@ export async function POST(request: Request) {
         modelId: resolvedModel.modelId,
         inputTokens,
         outputTokens,
+        pricing,
       });
       const generation = await recordAiGeneration({
         organizationId,

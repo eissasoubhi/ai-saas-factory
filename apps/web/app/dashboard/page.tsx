@@ -39,6 +39,7 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/ai">AI</Link>
+          <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/files">Files</Link>
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/settings/team">Team</Link>
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/settings/billing">Billing</Link>
           <span className="rounded-full border border-zinc-700 px-4 py-2 text-sm capitalize">{plan}</span>
@@ -54,8 +55,11 @@ export default async function DashboardPage() {
 
       <section className="mt-10 rounded-2xl border border-zinc-800 p-8">
         <h2 className="text-xl font-semibold">Workspace access is entitlement-driven</h2>
-        <p className="mt-3 max-w-2xl text-zinc-400">Billing controls paid access, while the AI workspace now persists tenant-scoped conversations and meters requests, tokens and configured model cost.</p>
-        <Link className="mt-5 inline-block rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black" href="/ai">Open AI workspace</Link>
+        <p className="mt-3 max-w-2xl text-zinc-400">Billing controls paid access, while the AI workspace persists tenant-scoped conversations and the file layer now provides private S3-compatible storage ready for ingestion and RAG.</p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link className="inline-block rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black" href="/ai">Open AI workspace</Link>
+          <Link className="inline-block rounded-lg border border-zinc-700 px-4 py-2 text-sm" href="/files">Manage files</Link>
+        </div>
       </section>
     </main>
   );

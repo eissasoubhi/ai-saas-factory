@@ -1,6 +1,6 @@
 # Roadmap
 
-## V0.1 — foundation (current)
+## V0.1 — foundation
 
 - [x] Turborepo + pnpm workspace
 - [x] Next.js web shell
@@ -15,36 +15,52 @@
 - [x] CI workflow
 - [x] architecture/product/security docs
 
-## V0.2 — sellable SaaS plumbing
+## V0.2 — identity and workspaces
 
-- [ ] sign up/sign in/sign out UI
-- [ ] email verification and password reset
+- [x] email/password sign up, sign in and sign out
+- [x] email verification and password reset
+- [x] protected dashboard
+- [x] first-run workspace onboarding
+- [x] organization creation and active-organization handling
+- [x] invitations and member settings
+- [x] owner/admin/member authorization through Better Auth
+- [x] Resend transactional email adapter
+- [x] ARM64 self-hosted CI support
 - [ ] OAuth provider example
-- [ ] onboarding wizard
-- [ ] organization creation/switching
-- [ ] invitations and member management
-- [ ] server-side RBAC helpers
-- [ ] Stripe Checkout subscriptions
-- [ ] Stripe Customer Portal
-- [ ] verified + idempotent Stripe webhooks
-- [ ] entitlement enforcement middleware/helpers
-- [ ] Resend transactional email adapter
-- [ ] account/settings/billing screens
-- [ ] seed/demo data
+- [ ] browser E2E suite
+- [ ] expanded member management actions
 
-## V0.3 — AI product layer
+## V0.3 — billing and entitlements
+
+- [x] organization-scoped Stripe Checkout
+- [x] Stripe Customer Portal
+- [x] verified webhook signatures with replay protection
+- [x] idempotent webhook event claims and retries
+- [x] out-of-order subscription event protection
+- [x] customer/subscription/price mapping per workspace
+- [x] paid plan resolution from server-side subscription state
+- [x] server-side team seat enforcement
+- [x] monthly AI request entitlement enforcement
+- [x] billing settings UI
+- [x] subscription/usage audit primitives
+- [x] V0.3 database migration
+- [x] tests for webhook signatures and event ordering
+- [ ] Stripe test-mode end-to-end smoke test with real webhook delivery
+
+## V0.4 — AI product layer
 
 - [ ] persisted conversations
 - [ ] model/provider abstraction examples
-- [ ] per-organization AI limits
-- [ ] usage and credit ledger
+- [ ] token and cost ledger
+- [ ] usage credits and overage model
 - [ ] rate limiting
 - [ ] background jobs
 - [ ] file uploads / object storage
+- [ ] RAG example
 - [ ] audit log viewer
-- [ ] API keys and webhooks for customer integrations
+- [ ] API keys and outbound customer webhooks
 
-## V0.4 — mobile
+## V0.5 — mobile
 
 - [ ] auth/session flow for Expo
 - [ ] organization switcher
@@ -54,7 +70,7 @@
 - [ ] deep links
 - [ ] EAS build/deploy documentation
 
-## V0.5 — commercial launch
+## V0.6 — commercial launch
 
 - [ ] polished demo application
 - [ ] installation wizard / bootstrap script
@@ -64,17 +80,3 @@
 - [ ] changelog/versioning policy
 - [ ] sample vertical app
 - [ ] launch page, screenshots and demo video
-
-## V0.2 implementation progress
-
-- [x] Email/password auth UI
-- [x] Email verification hooks
-- [x] Password reset flow
-- [x] Protected dashboard
-- [x] First workspace onboarding
-- [x] Invitation acceptance UI
-- [x] Basic team invitation/settings UI
-- [ ] Database migration generated and smoke-tested
-- [ ] OAuth provider example
-- [ ] Browser E2E tests
-- [ ] Permission-specific team actions

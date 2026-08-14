@@ -1,10 +1,41 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
-import { database, schema } from '@factory/db';
+import { getOrganizationSeatUsage, getSubscriptionForOrganization, paidPlanForSubscription, database, schema } from '@factory/db';
+import { entitlement } from '@factory/entitlements';
+import { APIError } from 'better-auth/api';
 import { betterAuth } from 'better-auth/minimal';
 import { organization } from 'better-auth/plugins';
 import { sendTransactionalEmail } from './email';
 
 const baseURL = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+
+async function teamSeatLimit(organizationId: string) {
+  const subscription = await getSubscriptionForOrganization(organizationId);
+  return entitlement(paidPlanForSubscription(subscription), 'team_members') as number;
+}
+
+async function enforceInvitationSeatLimit(organizationId: string) {
+  const [limit, usage] = await Promise.all([
+    teamSeatLimit(organizationId),
+    getOrganizationSeatUsage(organizationId),
+  ]);
+  if (usage.members + usage.pendingInvitations >= limit) {
+    throw new APIError('FORBIDDEN', {
+      message: `This workspace has reached its ${limit}-seat plan limit. Upgrade billing before inviting another member.`,
+    });
+  }
+}
+
+async function enforceMemberSeatLimit(organizationId: string) {
+  const [limit, usage] = await Promise.all([
+    teamSeatLimit(organizationId),
+    getOrganizationSeatUsage(organizationId),
+  ]);
+  if (usage.members >= limit) {
+    throw new APIError('FORBIDDEN', {
+      message: `This workspace has reached its ${limit}-seat plan limit.`,
+    });
+  }
+}
 
 export const auth = betterAuth({
   appName: 'AI SaaS Factory',
@@ -43,6 +74,14 @@ export const auth = betterAuth({
     organization({
       requireEmailVerificationOnInvitation: true,
       invitationExpiresIn: 60 * 60 * 48,
+      organizationHooks: {
+        async beforeCreateInvitation({ organization: targetOrganization }) {
+          await enforceInvitationSeatLimit(targetOrganization.id);
+        },
+        async beforeAddMember({ organization: targetOrganization }) {
+          await enforceMemberSeatLimit(targetOrganization.id);
+        },
+      },
       async sendInvitationEmail(data) {
         const inviteLink = `${baseURL}/accept-invitation?id=${encodeURIComponent(data.id)}`;
         void sendTransactionalEmail({

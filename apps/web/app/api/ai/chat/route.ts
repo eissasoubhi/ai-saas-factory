@@ -1,4 +1,5 @@
 import {
+  assertOrganizationScope,
   consumeAiRequestQuota,
   createConversation,
   createConversationMessage,
@@ -123,6 +124,7 @@ export async function POST(request: Request) {
     modelId: resolvedModel.modelId,
   });
   const persistedMessages = await listConversationMessages(organizationId, existingConversation.id);
+  assertOrganizationScope(organizationId, persistedMessages);
   const startedAt = Date.now();
 
   const result = streamText({

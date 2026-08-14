@@ -69,6 +69,7 @@ export async function markStoredFileUploaded(input: {
       eTag: input.eTag ?? null,
       status: 'uploaded',
       uploadedAt: now,
+      processingStartedAt: null,
       lastError: null,
       updatedAt: now,
     })
@@ -76,7 +77,7 @@ export async function markStoredFileUploaded(input: {
       and(
         eq(storedFile.id, input.fileId),
         eq(storedFile.organizationId, input.organizationId),
-        inArray(storedFile.status, ['uploading', 'uploaded']),
+        inArray(storedFile.status, ['uploading', 'uploaded', 'failed']),
       ),
     )
     .returning();

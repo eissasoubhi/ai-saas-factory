@@ -33,6 +33,14 @@
                         │ signed webhooks
                         ▼
                     apps/web API
+
+             ┌──────────────────────┐
+             │   Model providers    │
+             │ OpenAI now; more    │
+             └──────────▲───────────┘
+                        │ streamText
+                        │
+                    apps/web API
 ```
 
 ## Why one web server first
@@ -44,6 +52,8 @@ V1 deliberately keeps product logic behind the Next.js server boundary instead o
 Tenant context is an organization. Membership determines role. Paid feature access is derived from organization billing state and the entitlement policy package.
 
 Never authorize a resource using only an organization ID supplied by the client. Resolve membership from the authenticated session on the server.
+
+Tenant-owned AI data repeats `organization_id` on conversations, messages and generation records. This is intentional defense in depth: queries can apply tenant scope directly at every persistence boundary instead of depending solely on parent joins.
 
 ## Authentication flow
 
@@ -85,11 +95,47 @@ The `packages/entitlements` package contains static plan limits, while the effec
 Enforcement happens at server boundaries:
 
 - Better Auth organization hooks reject invitations or member additions beyond the seat limit.
-- the AI route checks monthly organization usage before calling the model provider;
+- the AI route reserves monthly request entitlement before calling the model provider;
+- the same reservation enforces an organization-level one-minute burst limit;
 - UI pages display entitlement state but are not trusted for authorization.
 
 A subscription receives paid entitlements only while its provider status is `active` or `trialing`. Other states fail closed to Free access.
 
-## AI usage
+## AI runtime
 
-Billable AI calls write immutable usage events containing organization, actor, metric, quantity and idempotency key. Monthly limits are calculated from those events. Aggregate balances can later be cached, but usage events remain the audit source.
+```text
+browser message
+      │
+      ▼
+POST /api/ai/chat
+      │
+      ├─ session + active organization
+      ├─ conversation lookup scoped by organization
+      ├─ provider:model allow-list
+      ├─ pricing config validation
+      ├─ plan resolution
+      ├─ PostgreSQL advisory lock
+      │     └─ reserve monthly + minute request quota
+      ├─ persist user message
+      ├─ reload server-owned message history
+      ▼
+AI SDK streamText ───────────────► model provider
+      │                              │
+      │ text stream                  │ provider usage
+      ▼                              ▼
+   browser                        onFinish
+                                     │
+                                     ├─ assistant message
+                                     ├─ ai_generation
+                                     └─ token/cost usage events
+```
+
+The client sends only a new user message plus an optional conversation/model ID. It cannot send trusted history. Model context is reconstructed from persisted tenant-scoped messages.
+
+`apps/web/lib/ai-models.ts` owns the model registry and deployment allow-list. Product code uses stable `provider:model` IDs rather than provider-specific constructors.
+
+Quota reservation is serialized per organization with a PostgreSQL transaction-scoped advisory lock. The monthly count, rolling one-minute count and new `ai.requests` event are handled while the lock is held, closing the usual concurrency hole around quota checks.
+
+The HTTP response is a plain text stream. `consumeStream()` also consumes the result on the server so generation finalization can continue after a browser disconnect. The `onFinish` callback persists provider-reported token counts and optional deployment-configured cost estimates.
+
+`ai_generation` is the per-generation ledger. `usage_event` remains the immutable metric ledger used for request, token and cost aggregation. See `docs/ai-runtime.md` for configuration and operational details.

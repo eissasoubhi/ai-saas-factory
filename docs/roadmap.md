@@ -47,18 +47,44 @@
 - [x] tests for webhook signatures and event ordering
 - [ ] Stripe test-mode end-to-end smoke test with real webhook delivery
 
-## V0.4 — AI product layer
+## V0.4A — AI runtime, conversations and metering
 
-- [ ] persisted conversations
-- [ ] model/provider abstraction examples
-- [ ] token and cost ledger
-- [ ] usage credits and overage model
-- [ ] rate limiting
-- [ ] background jobs
-- [ ] file uploads / object storage
-- [ ] RAG example
+- [x] organization-scoped persisted conversations
+- [x] persisted user/assistant messages
+- [x] server-authoritative conversation history
+- [x] centralized `provider:model` registry
+- [x] deployment model allow-list
+- [x] provider-reported token capture
+- [x] configurable per-model cost estimation
+- [x] immutable generation and usage ledger
+- [x] atomic monthly AI request reservation
+- [x] organization-level per-minute rate limiting
+- [x] conversation list/detail UI
+- [x] archive, restore and delete flows
+- [x] disconnect-safe stream consumption for persistence
+- [x] Drizzle AI runtime migration
+- [x] pricing and quota policy tests
+- [ ] real-provider smoke test with a test API key
+
+## V0.4B — files, jobs and RAG
+
+- [ ] background job abstraction
+- [ ] object storage abstraction
+- [ ] file uploads and signed access
+- [ ] ingestion job lifecycle
+- [ ] embeddings provider abstraction
+- [ ] RAG example with tenant isolation
+- [ ] document deletion / re-index flow
+- [ ] storage and retrieval quotas
+
+## V0.4C — platform APIs and observability
+
 - [ ] audit log viewer
-- [ ] API keys and outbound customer webhooks
+- [ ] API keys
+- [ ] outbound customer webhooks
+- [ ] AI cost/usage dashboard
+- [ ] usage credits and overage model
+- [ ] structured application telemetry
 
 ## V0.5 — mobile
 

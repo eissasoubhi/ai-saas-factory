@@ -1,6 +1,6 @@
 # AI SaaS Factory
 
-A commercial, AI-native B2B SaaS starter for teams that want to ship production web and mobile products without rebuilding authentication, organizations, billing, entitlements, AI streaming, audit logs, and deployment foundations.
+A commercial, AI-native B2B SaaS starter for teams that want to ship production web and mobile products without rebuilding authentication, organizations, billing, entitlements, persisted AI conversations, metering, audit logs, and deployment foundations.
 
 ## Product direction
 
@@ -15,7 +15,7 @@ A commercial, AI-native B2B SaaS starter for teams that want to ship production 
 - PostgreSQL + Drizzle ORM
 - Better Auth with organizations
 - Stripe Checkout, Customer Portal and verified webhooks
-- AI SDK 6
+- AI SDK 6 with centralized model registry
 - Expo SDK 57 / React Native 0.86
 - Turborepo + pnpm
 - Docker for local PostgreSQL, Redis and Mailpit
@@ -27,7 +27,7 @@ apps/
   web/       Next.js commercial web app
   mobile/    Expo mobile shell (V1.5)
 packages/
-  db/        database schema, migrations and billing/usage persistence
+  db/        schema, migrations, billing, conversations and usage persistence
   contracts/ shared runtime schemas and API contracts
   entitlements/ plan and feature policy
   typescript-config/ shared TypeScript configuration
@@ -51,9 +51,11 @@ Mailpit: http://localhost:8025
 
 ## Current status
 
-V0.2 provides production-oriented identity and workspace plumbing. V0.3 adds organization-scoped Stripe billing, webhook reliability, subscription-backed entitlements, team-seat enforcement and monthly AI usage limits.
+V0.2 provides production-oriented identity and workspace plumbing. V0.3 adds organization-scoped Stripe billing, webhook reliability, subscription-backed entitlements and team-seat enforcement.
 
-The project is still pre-launch: OAuth examples, browser E2E coverage, rate limiting, the broader AI product layer, mobile billing and commercial packaging remain on the roadmap.
+V0.4A adds organization-scoped persisted AI conversations, server-owned history, model allow-listing, atomic monthly/per-minute request reservation, provider token capture, configurable cost estimation and a usable streaming chat UI.
+
+The project is still pre-launch: OAuth examples, browser E2E coverage, real Stripe/provider smoke tests, files/RAG/background jobs, mobile billing and commercial packaging remain on the roadmap.
 
 See:
 
@@ -61,6 +63,7 @@ See:
 - `docs/architecture.md`
 - `docs/security.md`
 - `docs/billing.md`
+- `docs/ai-runtime.md`
 
 ## Commercial intent
 

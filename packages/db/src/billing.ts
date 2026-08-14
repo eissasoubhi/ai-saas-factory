@@ -18,6 +18,10 @@ import { auditLog, invitation, member, subscription, usageEvent, webhookEvent } 
 export type BillingPlan = 'free' | 'starter' | 'pro';
 
 export type SubscriptionSnapshot = typeof subscription.$inferSelect;
+export type WebhookClaimSnapshot = Pick<
+  typeof webhookEvent.$inferSelect,
+  'processed' | 'processingStartedAt' | 'lastError'
+>;
 
 export type StripeSubscriptionUpdate = {
   organizationId: string;
@@ -33,6 +37,22 @@ export type StripeSubscriptionUpdate = {
 
 export function shouldApplyProviderUpdate(current: Date | null | undefined, incoming: Date) {
   return !current || incoming.getTime() >= current.getTime();
+}
+
+export function webhookClaimDecision(
+  existing: WebhookClaimSnapshot | null | undefined,
+  now = new Date(),
+  leaseMs = 5 * 60 * 1000,
+) {
+  if (!existing || existing.processed) return 'duplicate' as const;
+  if (
+    existing.lastError ||
+    !existing.processingStartedAt ||
+    existing.processingStartedAt.getTime() < now.getTime() - leaseMs
+  ) {
+    return 'retry' as const;
+  }
+  return 'busy' as const;
 }
 
 export function paidPlanForSubscription(snapshot: SubscriptionSnapshot | null | undefined): BillingPlan {
@@ -164,7 +184,10 @@ export async function claimWebhookEvent(input: {
     )
     .limit(1);
 
-  if (!existing || existing.processed) return { state: 'duplicate' as const, id: existing?.id ?? null };
+  const decision = webhookClaimDecision(existing, now);
+  if (decision === 'duplicate') return { state: 'duplicate' as const, id: existing?.id ?? null };
+  if (decision === 'busy') return { state: 'busy' as const, id: existing?.id ?? null };
+  if (!existing) return { state: 'duplicate' as const, id: null };
 
   const [reclaimed] = await db
     .update(webhookEvent)

@@ -20,6 +20,12 @@ jobs:
       - run: corepack enable
       - run: corepack prepare pnpm@10.33.0 --activate
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @factory/db exec drizzle-kit generate --name=init
+      - uses: actions/upload-artifact@v4
+        with:
+          name: generated-drizzle-baseline
+          path: packages/db/drizzle
+          if-no-files-found: error
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

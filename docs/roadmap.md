@@ -64,3 +64,17 @@
 - [ ] changelog/versioning policy
 - [ ] sample vertical app
 - [ ] launch page, screenshots and demo video
+
+## V0.2 implementation progress
+
+- [x] Email/password auth UI
+- [x] Email verification hooks
+- [x] Password reset flow
+- [x] Protected dashboard
+- [x] First workspace onboarding
+- [x] Invitation acceptance UI
+- [x] Basic team invitation/settings UI
+- [ ] Database migration generated and smoke-tested
+- [ ] OAuth provider example
+- [ ] Browser E2E tests
+- [ ] Permission-specific team actions

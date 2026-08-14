@@ -22,3 +22,4 @@ export { schema };
 export * from './ai';
 export * from './ai-policy';
 export * from './billing';
+export * from './files';

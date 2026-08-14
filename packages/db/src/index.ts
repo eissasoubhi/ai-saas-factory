@@ -19,4 +19,5 @@ export function database() {
 }
 
 export { schema };
+export * from './ai';
 export * from './billing';

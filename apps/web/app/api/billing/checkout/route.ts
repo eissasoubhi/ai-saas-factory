@@ -7,6 +7,10 @@ function applicationBaseUrl(request: Request) {
   return process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? new URL(request.url).origin;
 }
 
+function hasManageableExistingSubscription(status: string) {
+  return status !== 'canceled' && status !== 'incomplete_expired' && status !== 'inactive';
+}
+
 export async function POST(request: Request) {
   const access = await requireBillingManager(request.headers);
   if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
@@ -20,8 +24,8 @@ export async function POST(request: Request) {
   const { organization, session } = access.context;
   let snapshot = await getSubscriptionForOrganization(organization.id);
 
-  if (snapshot?.providerSubscriptionId && (snapshot.status === 'active' || snapshot.status === 'trialing')) {
-    return NextResponse.redirect(new URL('/settings/billing?error=already-subscribed', applicationBaseUrl(request)), 303);
+  if (snapshot?.providerSubscriptionId && hasManageableExistingSubscription(snapshot.status)) {
+    return NextResponse.redirect(new URL('/settings/billing?error=manage-existing-subscription', applicationBaseUrl(request)), 303);
   }
 
   let customerId = snapshot?.providerCustomerId ?? null;

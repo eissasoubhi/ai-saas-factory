@@ -124,6 +124,8 @@ export const subscription = pgTable(
     provider: text('provider').notNull().default('stripe'),
     providerCustomerId: text('provider_customer_id'),
     providerSubscriptionId: text('provider_subscription_id'),
+    providerPriceId: text('provider_price_id'),
+    providerUpdatedAt: timestamp('provider_updated_at', { withTimezone: true }),
     plan: text('plan').notNull().default('free'),
     status: text('status').notNull().default('inactive'),
     currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
@@ -132,6 +134,7 @@ export const subscription = pgTable(
   },
   (table) => [
     uniqueIndex('subscription_org_uidx').on(table.organizationId),
+    uniqueIndex('subscription_provider_customer_uidx').on(table.providerCustomerId),
     uniqueIndex('subscription_provider_subscription_uidx').on(table.providerSubscriptionId),
   ],
 );
@@ -178,6 +181,7 @@ export const webhookEvent = pgTable(
     eventType: text('event_type').notNull(),
     processed: boolean('processed').notNull().default(false),
     attemptCount: integer('attempt_count').notNull().default(0),
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true }),
     lastError: text('last_error'),
     payload: jsonb('payload').$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

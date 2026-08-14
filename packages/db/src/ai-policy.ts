@@ -35,3 +35,14 @@ export function decideAiQuota(input: {
     minuteUsed: input.minuteUsed + 1,
   };
 }
+
+export function assertOrganizationScope<T extends { organizationId: string }>(
+  organizationId: string,
+  records: readonly T[],
+): readonly T[] {
+  const mismatched = records.find((record) => record.organizationId !== organizationId);
+  if (mismatched) {
+    throw new Error('Tenant isolation violation: resource organization does not match the active organization.');
+  }
+  return records;
+}

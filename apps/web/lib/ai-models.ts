@@ -24,8 +24,14 @@ export function allowedAiModelIds() {
   return ids.length > 0 ? [...new Set(ids)] : [defaultAiModelId()];
 }
 
+export function defaultAllowedAiModelId() {
+  const allowed = allowedAiModelIds();
+  const preferred = defaultAiModelId();
+  return allowed.includes(preferred) ? preferred : allowed[0] ?? preferred;
+}
+
 export function resolveAiModel(requestedModelId?: string | null) {
-  const modelId = requestedModelId?.trim() || defaultAiModelId();
+  const modelId = requestedModelId?.trim() || defaultAllowedAiModelId();
   if (!allowedAiModelIds().includes(modelId)) {
     throw new Error(`AI model ${modelId} is not allowed for this deployment.`);
   }

@@ -30,11 +30,12 @@ function conversationTitle(message: string) {
 }
 
 function toModelMessages(messages: Awaited<ReturnType<typeof listConversationMessages>>): ModelMessage[] {
-  return messages.flatMap((message) => {
-    if (message.role === 'user') return [{ role: 'user' as const, content: message.content }];
-    if (message.role === 'assistant') return [{ role: 'assistant' as const, content: message.content }];
-    return [];
-  });
+  const result: ModelMessage[] = [];
+  for (const message of messages) {
+    if (message.role === 'user') result.push({ role: 'user', content: message.content });
+    if (message.role === 'assistant') result.push({ role: 'assistant', content: message.content });
+  }
+  return result;
 }
 
 export async function POST(request: Request) {
@@ -121,6 +122,9 @@ export async function POST(request: Request) {
     async onFinish({ text, finishReason, totalUsage, response }) {
       if (!text.trim()) return;
 
+      const inputTokens = totalUsage.inputTokens ?? null;
+      const outputTokens = totalUsage.outputTokens ?? null;
+      const totalTokens = totalUsage.totalTokens ?? null;
       const assistantMessage = await createConversationMessage({
         organizationId,
         conversationId: existingConversation.id,
@@ -131,8 +135,8 @@ export async function POST(request: Request) {
       });
       const estimatedCostMicros = estimateAiCostMicros({
         modelId: resolvedModel.modelId,
-        inputTokens: totalUsage.inputTokens,
-        outputTokens: totalUsage.outputTokens,
+        inputTokens,
+        outputTokens,
       });
       const generation = await recordAiGeneration({
         organizationId,
@@ -142,30 +146,30 @@ export async function POST(request: Request) {
         provider: resolvedModel.provider,
         modelId: resolvedModel.modelId,
         finishReason,
-        inputTokens: totalUsage.inputTokens,
-        outputTokens: totalUsage.outputTokens,
-        totalTokens: totalUsage.totalTokens,
+        inputTokens,
+        outputTokens,
+        totalTokens,
         estimatedCostMicros,
         durationMs: Date.now() - startedAt,
       });
 
       const usageWrites: Promise<unknown>[] = [];
-      if (totalUsage.inputTokens != null) {
+      if (inputTokens != null) {
         usageWrites.push(recordUsage({
           organizationId,
           actorUserId: session.user.id,
           metric: 'ai.input_tokens',
-          quantity: totalUsage.inputTokens,
+          quantity: inputTokens,
           idempotencyKey: `ai-input-tokens/${generation.id}`,
           metadata: { modelId: resolvedModel.modelId },
         }));
       }
-      if (totalUsage.outputTokens != null) {
+      if (outputTokens != null) {
         usageWrites.push(recordUsage({
           organizationId,
           actorUserId: session.user.id,
           metric: 'ai.output_tokens',
-          quantity: totalUsage.outputTokens,
+          quantity: outputTokens,
           idempotencyKey: `ai-output-tokens/${generation.id}`,
           metadata: { modelId: resolvedModel.modelId },
         }));

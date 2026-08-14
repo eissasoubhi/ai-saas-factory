@@ -33,10 +33,14 @@ export function resolveAiModel(requestedModelId?: string | null) {
   const separatorIndex = modelId.indexOf(':');
   if (separatorIndex <= 0) throw new Error(`AI model ID must use provider:model format: ${modelId}`);
   const provider = modelId.slice(0, separatorIndex);
+  if (provider !== 'openai') {
+    throw new Error(`AI provider ${provider} is not installed in this edition yet.`);
+  }
 
+  const openAiModelId = modelId as `openai:${string}`;
   return {
     modelId,
     provider,
-    model: registry.languageModel(modelId),
+    model: registry.languageModel(openAiModelId),
   };
 }

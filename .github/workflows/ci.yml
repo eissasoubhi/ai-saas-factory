@@ -19,12 +19,7 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: corepack prepare pnpm@10.33.0 --activate
-      - run: pnpm install --no-frozen-lockfile
-      - uses: actions/upload-artifact@v4
-        with:
-          name: generated-lockfile
-          path: pnpm-lock.yaml
-          if-no-files-found: error
+      - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

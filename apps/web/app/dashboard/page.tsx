@@ -15,7 +15,11 @@ export default async function DashboardPage() {
   if (organizations.length === 0) redirect('/onboarding');
 
   const active = organizations.find((org) => org.id === session.session.activeOrganizationId) ?? organizations[0];
-  if (!session.session.activeOrganizationId) return <EnsureActiveOrganization organizationId={active.id} />;
+  if (!active) redirect('/onboarding');
+
+  if (!session.session.activeOrganizationId) {
+    return <EnsureActiveOrganization organizationId={active.id} />;
+  }
 
   const plan = 'starter' as const;
 
@@ -27,7 +31,11 @@ export default async function DashboardPage() {
           <h1 className="mt-2 text-4xl font-bold">Dashboard</h1>
           <p className="mt-2 text-sm text-zinc-500">Signed in as {session.user.email}</p>
         </div>
-        <div className="flex items-center gap-3"><Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/settings/team">Team</Link><span className="rounded-full border border-zinc-700 px-4 py-2 text-sm capitalize">{plan}</span><SignOutButton /></div>
+        <div className="flex items-center gap-3">
+          <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/settings/team">Team</Link>
+          <span className="rounded-full border border-zinc-700 px-4 py-2 text-sm capitalize">{plan}</span>
+          <SignOutButton />
+        </div>
       </div>
 
       <section className="mt-10 grid gap-4 md:grid-cols-3">
@@ -45,5 +53,10 @@ export default async function DashboardPage() {
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
-  return <article className="rounded-2xl border border-zinc-800 p-6"><p className="text-sm text-zinc-500">{label}</p><p className="mt-3 text-2xl font-semibold">{value}</p></article>;
+  return (
+    <article className="rounded-2xl border border-zinc-800 p-6">
+      <p className="text-sm text-zinc-500">{label}</p>
+      <p className="mt-3 text-2xl font-semibold">{value}</p>
+    </article>
+  );
 }

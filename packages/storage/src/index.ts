@@ -114,6 +114,10 @@ function opaqueSegment(value: string) {
   return Buffer.from(value, 'utf8').toString('base64url');
 }
 
+function normalizedContentType(value: string | null | undefined) {
+  return value?.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+}
+
 export function safeFilename(filename: string) {
   const normalized = filename
     .normalize('NFKC')
@@ -134,7 +138,7 @@ export function validateUploadPolicy(
   input: { contentType: string; sizeBytes: number },
   config: Pick<StorageConfig, 'allowedContentTypes' | 'maxUploadBytes'>,
 ): UploadPolicyResult {
-  const contentType = input.contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  const contentType = normalizedContentType(input.contentType);
   if (!contentType || !config.allowedContentTypes.has(contentType)) {
     throw new Error(`Content type ${contentType || '(missing)'} is not allowed`);
   }
@@ -145,6 +149,21 @@ export function validateUploadPolicy(
     throw new Error(`Upload exceeds the ${config.maxUploadBytes}-byte limit`);
   }
   return { contentType, expectedSizeBytes: input.sizeBytes };
+}
+
+export function validateStoredObject(input: {
+  expectedContentType: string;
+  expectedSizeBytes: number;
+  actual: StoredObjectMetadata;
+}) {
+  if (input.actual.sizeBytes !== input.expectedSizeBytes) {
+    throw new Error(`Uploaded object size mismatch: expected ${input.expectedSizeBytes}, received ${input.actual.sizeBytes}`);
+  }
+  const actualContentType = normalizedContentType(input.actual.contentType);
+  if (actualContentType !== normalizedContentType(input.expectedContentType)) {
+    throw new Error(`Uploaded object content type mismatch: expected ${input.expectedContentType}, received ${actualContentType || '(missing)'}`);
+  }
+  return input.actual;
 }
 
 export async function createPresignedUpload(input: {

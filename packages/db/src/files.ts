@@ -133,7 +133,7 @@ export async function markStoredFileFailed(organizationId: string, fileId: strin
       and(
         eq(storedFile.id, fileId),
         eq(storedFile.organizationId, organizationId),
-        inArray(storedFile.status, ['uploaded', 'processing', 'failed']),
+        inArray(storedFile.status, ['uploading', 'uploaded', 'processing', 'failed']),
       ),
     )
     .returning();

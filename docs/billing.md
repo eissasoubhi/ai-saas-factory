@@ -46,7 +46,7 @@ Webhook requests are checked against the raw request body and `Stripe-Signature`
 
 Every Stripe event is stored in `webhook_event` with the provider event ID under a unique constraint. A fresh event is claimed once. Failed events can be retried, and an abandoned processing claim becomes reclaimable after five minutes.
 
-Subscription writes store the Stripe event creation time in `provider_updated_at`. An older webhook cannot overwrite subscription state from a newer event. Replaying the same event timestamp is deterministic.
+Stripe does not guarantee webhook delivery order, so subscription-related events use the event object only to identify the subscription and then retrieve the current subscription state from Stripe before synchronizing PostgreSQL. `provider_updated_at` still prevents an older event from overwriting a state already synchronized from a newer event. This also makes replay of different events created in the same second converge on the same authoritative subscription state.
 
 ## Entitlement policy
 
@@ -59,15 +59,23 @@ Current server-enforced limits include:
 
 The billing settings page exposes the effective plan, provider state, seat usage and monthly AI request usage.
 
-## Database migration
+## Database migrations
 
-Apply the V0.3 migration before enabling billing:
+The repository contains a Drizzle-generated baseline migration for the complete current schema:
 
 ```text
-packages/db/drizzle/0000_v0_3_billing.sql
+packages/db/drizzle/0000_init.sql
+packages/db/drizzle/meta/_journal.json
+packages/db/drizzle/meta/0000_snapshot.json
 ```
 
-It adds provider price/update timestamps, a unique Stripe customer mapping and webhook processing-claim state.
+On a fresh database run:
+
+```bash
+pnpm db:migrate
+```
+
+When intentionally changing `packages/db/src/schema.ts`, generate and review the next migration with `pnpm db:generate`, commit the SQL and Drizzle metadata, then let CI run `drizzle-kit check`.
 
 ## Production notes
 

@@ -7,7 +7,7 @@ on:
 
 jobs:
   quality:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, Linux, ARM64, ai-saas]
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_saas_factory_test
       BETTER_AUTH_SECRET: ci-only-secret-ci-only-secret-1234

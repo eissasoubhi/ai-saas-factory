@@ -1,0 +1,5 @@
+{
+  "extends": "../../packages/typescript-config/base.json",
+  "compilerOptions": { "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler" },
+  "include": ["src/**/*.ts"]
+}

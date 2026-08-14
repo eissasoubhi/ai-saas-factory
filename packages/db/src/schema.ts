@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -136,6 +137,34 @@ export const subscription = pgTable(
     uniqueIndex('subscription_org_uidx').on(table.organizationId),
     uniqueIndex('subscription_provider_customer_uidx').on(table.providerCustomerId),
     uniqueIndex('subscription_provider_subscription_uidx').on(table.providerSubscriptionId),
+  ],
+);
+
+export const storedFile = pgTable(
+  'stored_file',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    objectKey: text('object_key').notNull(),
+    originalName: text('original_name').notNull(),
+    contentType: text('content_type').notNull(),
+    expectedSizeBytes: bigint('expected_size_bytes', { mode: 'number' }).notNull(),
+    actualSizeBytes: bigint('actual_size_bytes', { mode: 'number' }),
+    eTag: text('etag'),
+    purpose: text('purpose').notNull().default('knowledge'),
+    status: text('status').notNull().default('uploading'),
+    lastError: text('last_error'),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true }),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('stored_file_object_key_uidx').on(table.objectKey),
+    index('stored_file_org_created_idx').on(table.organizationId, table.createdAt),
+    index('stored_file_org_status_idx').on(table.organizationId, table.status),
   ],
 );
 

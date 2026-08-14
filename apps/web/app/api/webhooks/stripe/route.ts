@@ -35,15 +35,6 @@ function metadataValue(object: Record<string, unknown>, key: string) {
   return stringValue(record(object.metadata)?.[key]);
 }
 
-function asStripeSubscription(object: Record<string, unknown>): StripeSubscription | null {
-  const id = stringValue(object.id);
-  const customer = expandableId(object.customer);
-  const status = stringValue(object.status);
-  const items = record(object.items);
-  if (!id || !customer || !status || !Array.isArray(items?.data)) return null;
-  return object as unknown as StripeSubscription;
-}
-
 async function resolveOrganizationId(input: {
   metadataOrganizationId?: string | null;
   customerId: string;
@@ -96,6 +87,11 @@ function invoiceSubscriptionId(object: Record<string, unknown>) {
   return expandableId(details?.subscription);
 }
 
+async function applyAuthoritativeSubscription(subscriptionId: string, event: StripeEvent) {
+  const current = await retrieveStripeSubscription(subscriptionId);
+  await applySubscription(current, event);
+}
+
 async function processEvent(event: StripeEvent) {
   const object = event.data.object;
 
@@ -105,7 +101,7 @@ async function processEvent(event: StripeEvent) {
     const organizationId = metadataValue(object, 'organizationId') ?? stringValue(object.client_reference_id);
     if (!customerId || !organizationId) throw new Error('Checkout session is missing customer/workspace mapping');
     await ensureStripeCustomer(organizationId, customerId);
-    if (subscriptionId) await applySubscription(await retrieveStripeSubscription(subscriptionId), event);
+    if (subscriptionId) await applyAuthoritativeSubscription(subscriptionId, event);
     return;
   }
 
@@ -114,15 +110,15 @@ async function processEvent(event: StripeEvent) {
     event.type === 'customer.subscription.updated' ||
     event.type === 'customer.subscription.deleted'
   ) {
-    const subscription = asStripeSubscription(object);
-    if (!subscription) throw new Error('Invalid Stripe subscription payload');
-    await applySubscription(subscription, event);
+    const subscriptionId = stringValue(object.id);
+    if (!subscriptionId) throw new Error('Stripe subscription event is missing the subscription ID');
+    await applyAuthoritativeSubscription(subscriptionId, event);
     return;
   }
 
   if (event.type === 'invoice.paid' || event.type === 'invoice.payment_failed') {
     const subscriptionId = invoiceSubscriptionId(object);
-    if (subscriptionId) await applySubscription(await retrieveStripeSubscription(subscriptionId), event);
+    if (subscriptionId) await applyAuthoritativeSubscription(subscriptionId, event);
   }
 }
 

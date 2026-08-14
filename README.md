@@ -14,6 +14,7 @@ A commercial, AI-native B2B SaaS starter for teams that want to ship production 
 - TypeScript
 - PostgreSQL + Drizzle ORM
 - Better Auth with organizations
+- Stripe Checkout, Customer Portal and verified webhooks
 - AI SDK 6
 - Expo SDK 57 / React Native 0.86
 - Turborepo + pnpm
@@ -26,7 +27,7 @@ apps/
   web/       Next.js commercial web app
   mobile/    Expo mobile shell (V1.5)
 packages/
-  db/        database schema and client
+  db/        database schema, migrations and billing/usage persistence
   contracts/ shared runtime schemas and API contracts
   entitlements/ plan and feature policy
   typescript-config/ shared TypeScript configuration
@@ -39,7 +40,6 @@ cp .env.example .env
 corepack enable
 pnpm install
 docker compose up -d
-pnpm db:generate
 pnpm db:migrate
 pnpm dev
 ```
@@ -47,11 +47,20 @@ pnpm dev
 Web: http://localhost:3000  
 Mailpit: http://localhost:8025
 
+`pnpm db:generate` is for creating a new migration after intentionally changing the Drizzle schema. A fresh checkout should apply the committed migration history with `pnpm db:migrate`.
+
 ## Current status
 
-This repository is the **foundation milestone**, not a finished marketplace product. It intentionally establishes the architecture and product boundaries first. The next milestone completes authentication UX, onboarding, organizations, billing, email and entitlement enforcement.
+V0.2 provides production-oriented identity and workspace plumbing. V0.3 adds organization-scoped Stripe billing, webhook reliability, subscription-backed entitlements, team-seat enforcement and monthly AI usage limits.
 
-See `docs/roadmap.md`.
+The project is still pre-launch: OAuth examples, browser E2E coverage, rate limiting, the broader AI product layer, mobile billing and commercial packaging remain on the roadmap.
+
+See:
+
+- `docs/roadmap.md`
+- `docs/architecture.md`
+- `docs/security.md`
+- `docs/billing.md`
 
 ## Commercial intent
 

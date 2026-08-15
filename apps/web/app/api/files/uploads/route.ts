@@ -6,11 +6,15 @@ import {
   storageObjectKey,
   validateUploadPolicy,
 } from '@factory/storage';
+import { correlationIdFromHeaders, emitTelemetry } from '@factory/telemetry';
+import { recordAuditEvent } from '@/lib/audit';
 import { auth } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
+  const correlationId = correlationIdFromHeaders(request.headers);
+  const startedAt = Date.now();
   const session = await auth.api.getSession({ headers: request.headers });
   const organizationId = session?.session.activeOrganizationId;
   if (!session || !organizationId) {
@@ -72,6 +76,34 @@ export async function POST(request: Request) {
     contentType: policy.contentType,
     expectedSizeBytes: policy.expectedSizeBytes,
     purpose: 'knowledge',
+  });
+
+  await recordAuditEvent({
+    organizationId,
+    actorUserId: session.user.id,
+    action: 'file.upload_initialized',
+    entityType: 'file',
+    entityId: fileId,
+    metadata: {
+      contentType: policy.contentType,
+      expectedSizeBytes: policy.expectedSizeBytes,
+      purpose: 'knowledge',
+    },
+    correlationId,
+  });
+  emitTelemetry({
+    name: 'web.file.upload_initialized',
+    component: 'web',
+    correlationId,
+    durationMs: Date.now() - startedAt,
+    organizationId,
+    userId: session.user.id,
+    attributes: {
+      fileId,
+      contentType: policy.contentType,
+      expectedSizeBytes: policy.expectedSizeBytes,
+      purpose: 'knowledge',
+    },
   });
 
   return Response.json({

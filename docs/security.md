@@ -57,11 +57,27 @@
 - Completion performs `HeadObject` and requires actual size and content type to match the server-approved declaration before a job is queued.
 - Invalid uploaded objects are removed from storage and the file metadata is marked failed.
 - Downloads are signed only for files in `ready` state and only after a `(organizationId, fileId)` lookup succeeds.
-- Delete operations resolve the object key from trusted PostgreSQL state, delete the object, then soft-delete file metadata.
+- Delete operations resolve the object key from trusted PostgreSQL state; RAG chunks are removed under the same tenant/file lock before file metadata is soft-deleted.
 - pg-boss payloads contain only organization ID and file ID. Workers never accept raw storage coordinates from queue messages.
 - The worker reloads the file under the job organization and treats missing/cross-tenant resources as no-op rather than falling back to an unscoped lookup.
-- Deterministic size/MIME policy violations complete as failed jobs; transient storage errors are re-thrown for pg-boss retry/backoff.
+- Deterministic storage-policy violations complete as failed jobs; transient extraction/provider/storage errors are re-thrown for pg-boss retry/backoff.
 - The normal web producer does not auto-migrate the pg-boss schema. Worker/deployment setup owns queue DDL privileges.
+
+## RAG controls
+
+- `document_chunk` repeats `organization_id` even though the parent file is tenant-owned. Retrieval does not depend only on a parent relation for authorization.
+- Similarity search filters both `document_chunk.organization_id` and joined `stored_file.organization_id` by the authenticated active organization.
+- Retrieval considers only files in `ready` state whose `deleted_at` is null.
+- Returned vector rows are checked again with `assertOrganizationScope` before their content can enter model context. A cross-tenant row therefore fails closed even if a future SQL regression weakens the query.
+- The RAG worker receives only `(organizationId, fileId)`, reloads the authorized file, and obtains the object key from PostgreSQL. Queue payloads cannot redirect extraction to arbitrary object keys.
+- Re-indexing acquires a per-tenant/file PostgreSQL advisory lock and replaces the file's chunk set transactionally. Retries do not accumulate duplicate active chunks.
+- File deletion acquires the same lock and removes chunks before soft-deleting file metadata, preventing stale knowledge from remaining queryable.
+- The vector column is fixed to 1536 dimensions. Runtime configuration and generated embeddings are validated against that dimension before persistence/search.
+- PDF extraction has configurable page, text-size and timeout limits. The timeout is an application guard; production worker containers still require CPU/memory/process limits.
+- Retrieved document text is untrusted data. It is wrapped in a `<knowledge>` section with explicit instructions not to obey role changes, policies, commands or tool requests found in files.
+- Prompt-injection defenses in the system prompt are not an authorization mechanism. Future tools/actions must independently validate identity, tenant, role and resource scope.
+- Source headers contain only compact file/chunk metadata, not document content or storage coordinates.
+- Embedding and query-embedding token usage is metered as `ai.embedding_tokens`.
 
 ## Required pre-launch review
 
@@ -73,7 +89,7 @@
 - Stripe test-mode Checkout and Customer Portal smoke test
 - real signed webhook delivery and replay tests
 - duplicate and out-of-order subscription event tests
-- real AI-provider smoke test for every enabled model
+- real AI-provider smoke test for every enabled chat and embedding model
 - AI request race/concurrency load test near quota limits
 - conversation retention/export/delete policy
 - model-specific prompt/tool authorization boundaries
@@ -83,5 +99,10 @@
 - worker crash/retry/dead-letter behavior
 - file retention and storage lifecycle policy
 - malware/content scanning policy before accepting arbitrary public uploads
-- AI prompt/file authorization boundaries
+- pgvector extension/migration privileges in production
+- real two-tenant RAG retrieval test with known cross-tenant file/chunk IDs
+- document prompt-injection tests before enabling any model tools
+- extraction resource-exhaustion tests with malformed/large PDFs
+- re-index/delete races while RAG queries are active
+- storage/retrieval quota policy
 - rate limiting and abuse controls beyond the organization request limiter

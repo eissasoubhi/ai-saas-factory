@@ -52,7 +52,11 @@ describe('RAG source transport', () => {
 describe('RAG retrieval configuration', () => {
   it('uses bounded defaults when deployment settings are invalid', () => {
     expect(
-      ragRetrievalConfig({ RAG_RETRIEVAL_LIMIT: '99', RAG_MIN_SIMILARITY: 'oops' } as NodeJS.ProcessEnv),
+      ragRetrievalConfig({
+        NODE_ENV: 'test',
+        RAG_RETRIEVAL_LIMIT: '99',
+        RAG_MIN_SIMILARITY: 'oops',
+      } as NodeJS.ProcessEnv),
     ).toEqual({ limit: 6, minSimilarity: 0.35 });
   });
 });

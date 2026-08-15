@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { database } from './index';
+import { documentChunk } from './rag-schema';
 import { storedFile } from './schema';
 
 export type StoredFileStatus = 'uploading' | 'uploaded' | 'processing' | 'ready' | 'failed' | 'deleted';
@@ -94,7 +95,8 @@ export async function markStoredFileProcessing(organizationId: string, fileId: s
       and(
         eq(storedFile.id, fileId),
         eq(storedFile.organizationId, organizationId),
-        inArray(storedFile.status, ['uploaded', 'processing', 'failed']),
+        inArray(storedFile.status, ['uploaded', 'processing', 'ready', 'failed']),
+        isNull(storedFile.deletedAt),
       ),
     )
     .returning();
@@ -134,7 +136,8 @@ export async function markStoredFileFailed(organizationId: string, fileId: strin
       and(
         eq(storedFile.id, fileId),
         eq(storedFile.organizationId, organizationId),
-        inArray(storedFile.status, ['uploading', 'uploaded', 'processing', 'failed']),
+        inArray(storedFile.status, ['uploading', 'uploaded', 'processing', 'ready', 'failed']),
+        isNull(storedFile.deletedAt),
       ),
     )
     .returning();
@@ -143,11 +146,19 @@ export async function markStoredFileFailed(organizationId: string, fileId: strin
 
 export async function markStoredFileDeleted(organizationId: string, fileId: string) {
   const db = database();
-  const now = new Date();
-  const [row] = await db
-    .update(storedFile)
-    .set({ status: 'deleted', deletedAt: now, processingStartedAt: null, updatedAt: now })
-    .where(and(eq(storedFile.id, fileId), eq(storedFile.organizationId, organizationId)))
-    .returning();
-  return row ?? null;
+  return db.transaction(async (tx) => {
+    const lockKey = `rag-file:${organizationId}:${fileId}`;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+    await tx
+      .delete(documentChunk)
+      .where(and(eq(documentChunk.organizationId, organizationId), eq(documentChunk.fileId, fileId)));
+
+    const now = new Date();
+    const [row] = await tx
+      .update(storedFile)
+      .set({ status: 'deleted', deletedAt: now, processingStartedAt: null, updatedAt: now })
+      .where(and(eq(storedFile.id, fileId), eq(storedFile.organizationId, organizationId)))
+      .returning();
+    return row ?? null;
+  });
 }

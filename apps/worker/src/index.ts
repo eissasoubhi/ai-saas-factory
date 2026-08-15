@@ -14,17 +14,18 @@ import {
   readStoredObjectBytes,
   validateStoredObject,
 } from '@factory/storage';
+import { emitTelemetry } from '@factory/telemetry';
 
 async function processFileJob(data: unknown) {
   const payload = FileIngestJobSchema.parse(data);
   const file = await getStoredFileForOrganization(payload.organizationId, payload.fileId);
-  if (!file || file.status === 'deleted') return;
+  if (!file || file.status === 'deleted') return { ...payload, status: 'skipped', chunkCount: 0 } as const;
   if (file.status === 'uploading') {
     throw new Error(`File ${file.id} has not completed its upload handshake yet`);
   }
 
   const processing = await markStoredFileProcessing(payload.organizationId, payload.fileId);
-  if (!processing) return;
+  if (!processing) return { ...payload, status: 'skipped', chunkCount: 0 } as const;
 
   let actual;
   try {
@@ -37,7 +38,7 @@ async function processFileJob(data: unknown) {
   } catch (error) {
     await deleteStoredObject({ key: file.objectKey }).catch(() => undefined);
     await markStoredFileFailed(payload.organizationId, payload.fileId, error);
-    return;
+    return { ...payload, status: 'rejected', chunkCount: 0 } as const;
   }
 
   try {
@@ -90,6 +91,14 @@ async function processFileJob(data: unknown) {
         metadata: { fileId: file.id, modelId: embedded.modelId, chunks: chunks.length },
       });
     }
+
+    return {
+      ...payload,
+      status: 'ready',
+      chunkCount: chunks.length,
+      embeddingTokens: embedded.tokens,
+      embeddingModelId: embedded.modelId,
+    } as const;
   } catch (error) {
     await markStoredFileFailed(payload.organizationId, payload.fileId, error);
     throw error;
@@ -99,16 +108,54 @@ async function processFileJob(data: unknown) {
 async function main() {
   const boss = await createFileWorkerBoss();
   const workerId = await boss.work(FILE_INGEST_QUEUE, async (jobs) => {
-    for (const job of jobs) await processFileJob(job.data);
+    for (const job of jobs) {
+      const startedAt = Date.now();
+      const correlationId = String(job.id);
+      try {
+        const result = await processFileJob(job.data);
+        emitTelemetry({
+          name: 'worker.file_ingest.completed',
+          component: 'worker',
+          correlationId,
+          durationMs: Date.now() - startedAt,
+          organizationId: result.organizationId,
+          attributes: {
+            fileId: result.fileId,
+            status: result.status,
+            chunkCount: result.chunkCount,
+            ...('embeddingTokens' in result ? { embeddingTokens: result.embeddingTokens } : {}),
+            ...('embeddingModelId' in result ? { modelId: result.embeddingModelId } : {}),
+          },
+        });
+      } catch (error) {
+        const parsed = FileIngestJobSchema.safeParse(job.data);
+        emitTelemetry({
+          name: 'worker.file_ingest.failed',
+          level: 'error',
+          component: 'worker',
+          correlationId,
+          durationMs: Date.now() - startedAt,
+          organizationId: parsed.success ? parsed.data.organizationId : undefined,
+          attributes: parsed.success ? { fileId: parsed.data.fileId } : { invalidPayload: true },
+          error,
+        });
+        throw error;
+      }
+    }
   });
 
-  console.log(`AI SaaS Factory worker listening on ${FILE_INGEST_QUEUE} (${workerId})`);
+  emitTelemetry({
+    name: 'worker.started',
+    component: 'worker',
+    correlationId: String(workerId),
+    attributes: { queue: FILE_INGEST_QUEUE },
+  });
 
   let stopping = false;
   async function stop(signal: string) {
     if (stopping) return;
     stopping = true;
-    console.log(`Stopping worker after ${signal}`);
+    emitTelemetry({ name: 'worker.stopping', component: 'worker', attributes: { signal } });
     await boss.stop({ graceful: true });
     process.exitCode = 0;
   }
@@ -118,6 +165,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Worker failed to start', error);
+  emitTelemetry({ name: 'worker.start_failed', level: 'error', component: 'worker', error });
   process.exitCode = 1;
 });

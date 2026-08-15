@@ -15,6 +15,7 @@
     "@better-auth/drizzle-adapter": "1.6.25",
     "@factory/contracts": "workspace:*",
     "@factory/db": "workspace:*",
+    "@factory/embeddings": "workspace:*",
     "@factory/entitlements": "workspace:*",
     "@factory/jobs": "workspace:*",
     "@factory/storage": "workspace:*",

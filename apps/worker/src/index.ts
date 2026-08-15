@@ -54,7 +54,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     console.log(`Stopping worker after ${signal}`);
-    await boss.stop({ graceful: true, wait: true });
+    await boss.stop({ graceful: true });
     process.exitCode = 0;
   }
 

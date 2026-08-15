@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { decodeRagSourcesHeader, type RagSource } from '@/lib/rag-context';
 
 type ChatMessage = {
   id: string;
@@ -23,9 +24,12 @@ export function ChatPanel({
   readOnly?: boolean;
 }) {
   const router = useRouter();
+  const [activeConversationId, setActiveConversationId] = useState(conversationId);
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
   const [selectedModelId, setSelectedModelId] = useState(modelId);
+  const [useKnowledge, setUseKnowledge] = useState(false);
+  const [sources, setSources] = useState<RagSource[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +47,7 @@ export function ChatPanel({
     ]);
     setInput('');
     setPending(true);
+    setSources([]);
     setError(null);
 
     try {
@@ -50,9 +55,10 @@ export function ChatPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversationId,
+          conversationId: activeConversationId,
           message: prompt,
           modelId: selectedModelId,
+          useKnowledge,
         }),
       });
 
@@ -62,6 +68,7 @@ export function ChatPanel({
       }
 
       const createdConversationId = response.headers.get('X-Conversation-Id');
+      setSources(decodeRagSourcesHeader(response.headers.get('X-RAG-Sources')));
       const reader = response.body?.getReader();
       if (!reader) throw new Error('AI response stream is unavailable.');
       const decoder = new TextDecoder();
@@ -79,8 +86,9 @@ export function ChatPanel({
       }
       assistantText += decoder.decode();
 
-      if (!conversationId && createdConversationId) {
-        router.push(`/ai/${encodeURIComponent(createdConversationId)}`);
+      if (!activeConversationId && createdConversationId) {
+        setActiveConversationId(createdConversationId);
+        window.history.replaceState(null, '', `/ai/${encodeURIComponent(createdConversationId)}`);
       } else {
         router.refresh();
       }
@@ -111,12 +119,34 @@ export function ChatPanel({
             </article>
           ))
         )}
+
+        {sources.length > 0 ? (
+          <aside className="mr-auto max-w-3xl rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">Knowledge sources</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {sources.map((source, index) => (
+                <span key={source.chunkId} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300">
+                  [S{index + 1}] {source.fileName} · chunk {source.chunkIndex} · {Math.round(source.similarity * 100)}%
+                </span>
+              ))}
+            </div>
+          </aside>
+        ) : null}
       </div>
 
       <form className="border-t border-zinc-800 p-4" onSubmit={submit}>
         {error ? <p className="mb-3 rounded-lg border border-red-900/50 bg-red-950/30 p-3 text-sm text-red-300">{error}</p> : null}
+        <label className="mb-3 flex items-center gap-2 text-sm text-zinc-400">
+          <input
+            type="checkbox"
+            checked={useKnowledge}
+            disabled={pending || readOnly}
+            onChange={(event) => setUseKnowledge(event.target.checked)}
+          />
+          Use workspace knowledge
+        </label>
         <div className="flex flex-col gap-3 sm:flex-row">
-          {!conversationId && allowedModelIds.length > 1 ? (
+          {!activeConversationId && allowedModelIds.length > 1 ? (
             <select
               aria-label="AI model"
               className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-3 text-sm"

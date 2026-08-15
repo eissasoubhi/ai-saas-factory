@@ -3,7 +3,7 @@ import {
   markStoredFileFailed,
   markStoredFileUploaded,
 } from '@factory/db';
-import { enqueueFileVerification } from '@factory/jobs';
+import { enqueueFileIngestion } from '@factory/jobs';
 import { deleteStoredObject, headStoredObject, validateStoredObject } from '@factory/storage';
 import { auth } from '@/lib/auth';
 
@@ -52,7 +52,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   try {
-    const job = await enqueueFileVerification({ organizationId, fileId: file.id });
+    const job = await enqueueFileIngestion({ organizationId, fileId: file.id });
     return Response.json(
       { file: { id: file.id, status: 'uploaded' }, job: { id: job.id, deduplicated: job.deduplicated } },
       { status: 202 },

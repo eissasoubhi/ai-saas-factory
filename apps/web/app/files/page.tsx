@@ -25,8 +25,8 @@ export default async function FilesPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500">{context.organization.name}</p>
-          <h1 className="mt-2 text-4xl font-bold">Files</h1>
-          <p className="mt-3 max-w-2xl text-zinc-400">Private, tenant-scoped object storage ready for the RAG ingestion layer.</p>
+          <h1 className="mt-2 text-4xl font-bold">Files & knowledge</h1>
+          <p className="mt-3 max-w-2xl text-zinc-400">Private workspace files are extracted, chunked and embedded by the background worker. Ready files can be retrieved by AI knowledge mode.</p>
         </div>
         <Link href="/dashboard" className="rounded-lg border border-zinc-700 px-4 py-2 text-sm">Dashboard</Link>
       </div>
@@ -53,7 +53,7 @@ export default async function FilesPage() {
                   <p className="mt-1 text-sm">{formatBytes(file.actualSizeBytes ?? file.expectedSizeBytes)}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-zinc-600">Status</p>
+                  <p className="text-xs uppercase tracking-wide text-zinc-600">Knowledge</p>
                   <p className="mt-1 text-sm capitalize">{file.status}</p>
                 </div>
                 <FileActions fileId={file.id} status={file.status} />

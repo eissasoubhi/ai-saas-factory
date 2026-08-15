@@ -193,6 +193,17 @@ export async function headStoredObject(input: { key: string; config?: StorageCon
   };
 }
 
+export async function readStoredObjectBytes(input: { key: string; config?: StorageConfig }): Promise<Uint8Array> {
+  const config = input.config ?? storageConfig();
+  const response = await clientFor(config).send(new GetObjectCommand({ Bucket: config.bucket, Key: input.key }));
+  if (!response.Body) throw new Error('Stored object has no readable body');
+  const bytes = await response.Body.transformToByteArray();
+  if (bytes.byteLength > config.maxUploadBytes) {
+    throw new Error(`Stored object exceeds the configured ${config.maxUploadBytes}-byte processing limit`);
+  }
+  return bytes;
+}
+
 export async function createPresignedDownload(input: {
   key: string;
   filename: string;

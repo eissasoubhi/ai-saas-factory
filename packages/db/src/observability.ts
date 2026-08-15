@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, leftJoin, lt, or, sql, sum } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, or, sql, sum } from 'drizzle-orm';
 import { database } from './index';
 import { auditLog, usageEvent, user } from './schema';
 

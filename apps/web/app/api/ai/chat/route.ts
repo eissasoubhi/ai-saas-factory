@@ -9,12 +9,20 @@ import {
   paidPlanForSubscription,
   recordAiGeneration,
   recordUsage,
+  searchDocumentChunks,
 } from '@factory/db';
+import { embedQuery } from '@factory/embeddings';
 import { entitlement } from '@factory/entitlements';
 import { streamText, type ModelMessage } from 'ai';
 import { estimateAiCostMicros, parseModelPricingJson } from '@/lib/ai-pricing';
 import { resolveAiModel } from '@/lib/ai-models';
 import { auth } from '@/lib/auth';
+import {
+  buildRagSystemContext,
+  encodeRagSourcesHeader,
+  ragRetrievalConfig,
+  ragSources,
+} from '@/lib/rag-context';
 
 export const maxDuration = 60;
 export const runtime = 'nodejs';
@@ -50,6 +58,7 @@ export async function POST(request: Request) {
     conversationId?: string;
     message?: string;
     modelId?: string;
+    useKnowledge?: boolean;
   } | null;
   const message = body?.message?.trim();
   if (!message) return Response.json({ error: 'message is required.' }, { status: 400 });
@@ -95,7 +104,7 @@ export async function POST(request: Request) {
     monthlyLimit,
     perMinuteLimit: rateLimitPerMinute(),
     idempotencyKey: `ai-request/${organizationId}/${requestId}`,
-    metadata: { plan, modelId: resolvedModel.modelId },
+    metadata: { plan, modelId: resolvedModel.modelId, useKnowledge: body?.useKnowledge === true },
   });
   if (!quota.allowed) {
     const error = quota.reason === 'monthly_limit'
@@ -105,6 +114,35 @@ export async function POST(request: Request) {
       { error, reason: quota.reason, monthlyUsed: quota.monthlyUsed, minuteUsed: quota.minuteUsed },
       { status: 429 },
     );
+  }
+
+  let retrievedChunks: Awaited<ReturnType<typeof searchDocumentChunks>> = [];
+  if (body?.useKnowledge === true) {
+    try {
+      const query = await embedQuery(message);
+      const retrieval = ragRetrievalConfig();
+      retrievedChunks = await searchDocumentChunks({
+        organizationId,
+        embedding: query.embedding,
+        limit: retrieval.limit,
+        minSimilarity: retrieval.minSimilarity,
+      });
+      if (query.tokens > 0) {
+        await recordUsage({
+          organizationId,
+          actorUserId: session.user.id,
+          metric: 'ai.embedding_tokens',
+          quantity: query.tokens,
+          idempotencyKey: `rag-query-embedding/${requestId}`,
+          metadata: { modelId: query.modelId, retrievedChunks: retrievedChunks.length },
+        });
+      }
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : 'Knowledge retrieval is unavailable.' },
+        { status: 503 },
+      );
+    }
   }
 
   if (!existingConversation) {
@@ -126,10 +164,13 @@ export async function POST(request: Request) {
   const persistedMessages = await listConversationMessages(organizationId, existingConversation.id);
   assertOrganizationScope(organizationId, persistedMessages);
   const startedAt = Date.now();
+  const system =
+    'You are a concise, helpful assistant inside a B2B SaaS application.' +
+    buildRagSystemContext(retrievedChunks);
 
   const result = streamText({
     model: resolvedModel.model,
-    system: 'You are a concise, helpful assistant inside a B2B SaaS application.',
+    system,
     messages: toModelMessages(persistedMessages),
     async onFinish({ text, finishReason, totalUsage, response }) {
       if (!text.trim()) return;
@@ -206,6 +247,7 @@ export async function POST(request: Request) {
     headers: {
       'X-Conversation-Id': existingConversation.id,
       'X-AI-Model-Id': resolvedModel.modelId,
+      'X-RAG-Sources': encodeRagSourcesHeader(ragSources(retrievedChunks)),
     },
   });
 }

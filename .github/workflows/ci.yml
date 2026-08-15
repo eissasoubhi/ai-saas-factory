@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -21,29 +21,13 @@ jobs:
       BETTER_AUTH_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Switch to pull request head
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: git checkout -B "$GITHUB_HEAD_REF" "${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: corepack enable
       - run: corepack prepare pnpm@10.33.0 --activate
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --filter @factory/db exec drizzle-kit generate --name=rag_vector
-      - name: Commit generated dependencies and RAG migration
-        shell: bash
-        run: |
-          if [ -n "$(git status --porcelain -- pnpm-lock.yaml packages/db/drizzle)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add pnpm-lock.yaml packages/db/drizzle
-            git commit -m "chore: sync RAG dependencies and migration"
-            git push origin "HEAD:${GITHUB_HEAD_REF}"
-          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @factory/db exec drizzle-kit check
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

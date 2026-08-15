@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, cosineDistance, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { assertOrganizationScope } from './ai-policy';
 import { database } from './index';
 import { documentChunk } from './rag-schema';
 import { storedFile } from './schema';
@@ -117,8 +118,9 @@ export async function searchDocumentChunks(input: {
   const minSimilarity = Math.min(Math.max(input.minSimilarity ?? 0.3, -1), 1);
   const similarity = sql<number>`1 - (${cosineDistance(documentChunk.embedding, input.embedding)})`;
 
-  return db
+  const rows = await db
     .select({
+      organizationId: documentChunk.organizationId,
       chunkId: documentChunk.id,
       fileId: documentChunk.fileId,
       fileName: storedFile.originalName,
@@ -146,4 +148,7 @@ export async function searchDocumentChunks(input: {
     )
     .orderBy(desc(similarity))
     .limit(limit);
+
+  assertOrganizationScope(input.organizationId, rows);
+  return rows;
 }

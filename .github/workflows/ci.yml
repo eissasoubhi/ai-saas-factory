@@ -22,7 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          fetch-depth: 2
+      - name: Switch to pull request head
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: git checkout -B "$GITHUB_HEAD_REF" "${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version: 22

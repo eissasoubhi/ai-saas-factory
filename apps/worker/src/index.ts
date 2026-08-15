@@ -7,7 +7,7 @@ import {
 } from '@factory/db';
 import { chunkDocumentText, documentLimits, extractDocumentText } from '@factory/documents';
 import { embedTexts } from '@factory/embeddings';
-import { createFileWorkerBoss, FILE_VERIFY_QUEUE, FileVerifyJobSchema } from '@factory/jobs';
+import { createFileWorkerBoss, FILE_INGEST_QUEUE, FileIngestJobSchema } from '@factory/jobs';
 import {
   deleteStoredObject,
   headStoredObject,
@@ -16,7 +16,7 @@ import {
 } from '@factory/storage';
 
 async function processFileJob(data: unknown) {
-  const payload = FileVerifyJobSchema.parse(data);
+  const payload = FileIngestJobSchema.parse(data);
   const file = await getStoredFileForOrganization(payload.organizationId, payload.fileId);
   if (!file || file.status === 'deleted') return;
   if (file.status === 'uploading') {
@@ -94,11 +94,11 @@ async function processFileJob(data: unknown) {
 
 async function main() {
   const boss = await createFileWorkerBoss();
-  const workerId = await boss.work(FILE_VERIFY_QUEUE, async (jobs) => {
+  const workerId = await boss.work(FILE_INGEST_QUEUE, async (jobs) => {
     for (const job of jobs) await processFileJob(job.data);
   });
 
-  console.log(`AI SaaS Factory worker listening on ${FILE_VERIFY_QUEUE} (${workerId})`);
+  console.log(`AI SaaS Factory worker listening on ${FILE_INGEST_QUEUE} (${workerId})`);
 
   let stopping = false;
   async function stop(signal: string) {

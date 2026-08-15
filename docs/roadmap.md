@@ -66,16 +66,35 @@
 - [x] pricing and quota policy tests
 - [ ] real-provider smoke test with a test API key
 
-## V0.4B — files, jobs and RAG
+## V0.4B1 — storage and durable jobs
 
-- [ ] background job abstraction
-- [ ] object storage abstraction
-- [ ] file uploads and signed access
-- [ ] ingestion job lifecycle
+- [x] S3-compatible object storage abstraction
+- [x] server-generated opaque tenant object keys
+- [x] short-lived presigned PUT/GET URLs
+- [x] file MIME and size policy
+- [x] post-upload object metadata verification
+- [x] tenant-scoped file lifecycle persistence
+- [x] upload / completion / download / delete APIs
+- [x] workspace file management UI
+- [x] pg-boss PostgreSQL queue abstraction
+- [x] retry/backoff and dead-letter queue
+- [x] separate durable worker runtime
+- [x] tenant-scoped minimal job payload
+- [x] file verification lifecycle (`uploading → uploaded → processing → ready/failed`)
+- [x] storage/job unit tests
+- [ ] generated Drizzle storage migration
+- [ ] real S3/R2 smoke test and browser CORS validation
+
+## V0.4B2 — tenant-isolated RAG
+
+- [ ] document extraction per supported MIME
+- [ ] chunk persistence and lifecycle
 - [ ] embeddings provider abstraction
-- [ ] RAG example with tenant isolation
+- [ ] tenant-scoped vector retrieval
+- [ ] RAG example integrated into conversations
 - [ ] document deletion / re-index flow
 - [ ] storage and retrieval quotas
+- [ ] extraction/retrieval integration tests
 
 ## V0.4C — platform APIs and observability
 

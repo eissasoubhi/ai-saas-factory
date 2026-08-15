@@ -16,7 +16,22 @@
              ┌──────────▼───────────┐
              │      PostgreSQL      │
              │ auth/org/billing/AI │
-             └──────────────────────┘
+             │ files + pg-boss     │
+             └──────────▲───────────┘
+                        │ durable jobs
+             ┌──────────┴───────────┐
+             │    apps/worker       │
+             │ background workers  │
+             └──────────┬───────────┘
+                        │ trusted object keys
+                        ▼
+             ┌──────────────────────┐
+             │ S3-compatible store │
+             │ S3 / R2 / MinIO     │
+             └──────────▲───────────┘
+                        │ presigned PUT/GET
+                        │
+                      browser
 
              ┌──────────────────────┐
              │     apps/mobile      │
@@ -45,7 +60,7 @@
 
 ## Why one web server first
 
-V1 deliberately keeps product logic behind the Next.js server boundary instead of introducing a separate API service prematurely. This lowers deployment complexity for buyers. A Python service becomes optional only when AI workloads justify it.
+V1 deliberately keeps interactive product logic behind the Next.js server boundary instead of introducing a separate API service prematurely. This lowers deployment complexity for buyers. Long-running work is separated into `apps/worker`, and a Python service becomes optional only when AI workloads justify it.
 
 ## Multi-tenancy
 
@@ -53,7 +68,7 @@ Tenant context is an organization. Membership determines role. Paid feature acce
 
 Never authorize a resource using only an organization ID supplied by the client. Resolve membership from the authenticated session on the server.
 
-Tenant-owned AI data repeats `organization_id` on conversations, messages and generation records. This is intentional defense in depth: queries can apply tenant scope directly at every persistence boundary instead of depending solely on parent joins.
+Tenant-owned AI and file data repeats `organization_id` at the persistence boundary. This is intentional defense in depth: queries can apply tenant scope directly instead of depending solely on parent joins.
 
 ## Authentication flow
 
@@ -139,3 +154,64 @@ Quota reservation is serialized per organization with a PostgreSQL transaction-s
 The HTTP response is a plain text stream. `consumeStream()` also consumes the result on the server so generation finalization can continue after a browser disconnect. The `onFinish` callback persists provider-reported token counts and optional deployment-configured cost estimates.
 
 `ai_generation` is the per-generation ledger. `usage_event` remains the immutable metric ledger used for request, token and cost aggregation. See `docs/ai-runtime.md` for configuration and operational details.
+
+## File storage flow
+
+```text
+browser
+  │ upload metadata only
+  ▼
+POST /api/files/uploads
+  │
+  ├─ active organization from session
+  ├─ validate MIME + expected bytes
+  ├─ server UUID + opaque object key
+  ├─ persist uploading row
+  └─ presigned PUT
+        │
+        ▼
+ S3-compatible storage
+        │
+        │ browser calls completion
+        ▼
+POST /api/files/:id/complete
+  │
+  ├─ tenant-scoped file lookup
+  ├─ HeadObject
+  ├─ exact size/MIME verification
+  └─ enqueue file.verify
+```
+
+`packages/storage` is the only storage transport boundary. It uses the S3 protocol and configuration rather than embedding AWS/R2-specific product logic. Object keys are generated on the server from opaque tenant/file segments; APIs never accept a raw object key from the client.
+
+The browser uploads directly to storage using a short-lived presigned PUT. This keeps file bytes out of the Next.js request path. Completion is a second server handshake that verifies actual object metadata before the file can enter durable processing.
+
+Private downloads use a short-lived presigned GET only after a tenant-scoped lookup confirms the file is `ready`. Deletion resolves the trusted object key from PostgreSQL, removes the object, then soft-deletes metadata.
+
+See `docs/storage-jobs.md` for provider/CORS configuration and operational details.
+
+## Durable job flow
+
+`packages/jobs` wraps pg-boss. The product already requires PostgreSQL, so durable file jobs can reuse that infrastructure instead of making Redis mandatory only for a queue.
+
+The web runtime acts as a producer. `apps/worker` is a separate persistent process that owns workers and queue supervision.
+
+```text
+web producer
+   │ { organizationId, fileId }
+   ▼
+pg-boss / PostgreSQL
+   │ retries + backoff + DLQ
+   ▼
+apps/worker
+   │
+   ├─ parse minimal job contract
+   ├─ reload file by organization + file ID
+   ├─ obtain trusted object key from DB
+   ├─ verify storage object
+   └─ transition processing → ready / failed
+```
+
+Queue payloads deliberately exclude raw storage coordinates and credentials. Worker handlers repeat the tenant lookup before touching object storage. Missing, deleted or already-ready resources are idempotent no-ops.
+
+The normal web producer does not own queue DDL migration privileges. Deployment/worker startup initializes pg-boss before uploads are accepted in an environment.

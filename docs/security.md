@@ -46,6 +46,23 @@
 - Conversation archive makes the chat read-only server-side; deletion is organization-scoped and cascades to messages/generations.
 - Raw provider API keys, prompts from unrelated tenants and hidden provider responses must never be written to audit metadata.
 
+## File storage and worker controls
+
+- File APIs derive the active organization from the authenticated session. The browser never sends a trusted organization ID, bucket or object key.
+- Object keys are created only on the server using opaque organization/file segments plus a sanitized display filename.
+- Storage access/secret keys remain server-only. They are never returned with presigned URLs.
+- Presigned URLs are short-lived, single-operation bearer capabilities. Do not log query strings containing signatures.
+- Browser PUT uploads require an explicit bucket CORS policy restricted to trusted application origins and required methods/headers.
+- The upload-init route validates declared MIME and byte length before signing.
+- Completion performs `HeadObject` and requires actual size and content type to match the server-approved declaration before a job is queued.
+- Invalid uploaded objects are removed from storage and the file metadata is marked failed.
+- Downloads are signed only for files in `ready` state and only after a `(organizationId, fileId)` lookup succeeds.
+- Delete operations resolve the object key from trusted PostgreSQL state, delete the object, then soft-delete file metadata.
+- pg-boss payloads contain only organization ID and file ID. Workers never accept raw storage coordinates from queue messages.
+- The worker reloads the file under the job organization and treats missing/cross-tenant resources as no-op rather than falling back to an unscoped lookup.
+- Deterministic size/MIME policy violations complete as failed jobs; transient storage errors are re-thrown for pg-boss retry/backoff.
+- The normal web producer does not auto-migrate the pg-boss schema. Worker/deployment setup owns queue DDL privileges.
+
 ## Required pre-launch review
 
 - auth/session configuration
@@ -60,6 +77,11 @@
 - AI request race/concurrency load test near quota limits
 - conversation retention/export/delete policy
 - model-specific prompt/tool authorization boundaries
+- S3/R2 test bucket with production-equivalent CORS
+- presigned URL expiry and leaked-URL response procedure
+- upload completion race/retry behavior
+- worker crash/retry/dead-letter behavior
+- file retention and storage lifecycle policy
+- malware/content scanning policy before accepting arbitrary public uploads
 - AI prompt/file authorization boundaries
-- storage signed URL expiry
 - rate limiting and abuse controls beyond the organization request limiter

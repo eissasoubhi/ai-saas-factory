@@ -15,6 +15,13 @@
       "when": 1786671262957,
       "tag": "0001_ai_runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786809075668,
+      "tag": "0002_storage_jobs",
+      "breakpoints": true
     }
   ]
 }

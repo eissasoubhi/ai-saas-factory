@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+--> statement-breakpoint
 CREATE TABLE "document_chunk" (
 	"id" text PRIMARY KEY NOT NULL,
 	"organization_id" text NOT NULL,

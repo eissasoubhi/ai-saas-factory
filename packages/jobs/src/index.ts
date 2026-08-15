@@ -1,15 +1,15 @@
 import { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 
-export const FILE_VERIFY_QUEUE = 'file.verify';
-export const FILE_VERIFY_DLQ = 'file.verify.dlq';
+export const FILE_INGEST_QUEUE = 'file.ingest';
+export const FILE_INGEST_DLQ = 'file.ingest.dlq';
 
-export const FileVerifyJobSchema = z.object({
+export const FileIngestJobSchema = z.object({
   organizationId: z.string().min(1),
   fileId: z.string().min(1),
 });
 
-export type FileVerifyJob = z.infer<typeof FileVerifyJobSchema>;
+export type FileIngestJob = z.infer<typeof FileIngestJobSchema>;
 
 let producerPromise: Promise<PgBoss> | null = null;
 
@@ -52,10 +52,10 @@ export async function stopJobProducer() {
   await boss.stop({ graceful: true });
 }
 
-export async function enqueueFileVerification(payload: FileVerifyJob) {
-  const data = FileVerifyJobSchema.parse(payload);
+export async function enqueueFileIngestion(payload: FileIngestJob) {
+  const data = FileIngestJobSchema.parse(payload);
   const boss = await jobProducer();
-  const id = await boss.send(FILE_VERIFY_QUEUE, data, {
+  const id = await boss.send(FILE_INGEST_QUEUE, data, {
     singletonKey: data.fileId,
     retryLimit: 5,
     retryDelay: 5,
@@ -67,13 +67,13 @@ export async function enqueueFileVerification(payload: FileVerifyJob) {
 export async function createFileWorkerBoss() {
   const boss = createBoss('worker');
   await boss.start();
-  await boss.createQueue(FILE_VERIFY_DLQ);
-  await boss.createQueue(FILE_VERIFY_QUEUE, {
+  await boss.createQueue(FILE_INGEST_DLQ);
+  await boss.createQueue(FILE_INGEST_QUEUE, {
     policy: 'singleton',
     retryLimit: 5,
     retryDelay: 5,
     retryBackoff: true,
-    deadLetter: FILE_VERIFY_DLQ,
+    deadLetter: FILE_INGEST_DLQ,
   });
   return boss;
 }

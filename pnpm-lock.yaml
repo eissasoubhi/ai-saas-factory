@@ -66,6 +66,9 @@ importers:
       '@factory/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@factory/embeddings':
+        specifier: workspace:*
+        version: link:../../packages/embeddings
       '@factory/entitlements':
         specifier: workspace:*
         version: link:../../packages/entitlements
@@ -130,6 +133,12 @@ importers:
       '@factory/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@factory/documents':
+        specifier: workspace:*
+        version: link:../../packages/documents
+      '@factory/embeddings':
+        specifier: workspace:*
+        version: link:../../packages/embeddings
       '@factory/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
@@ -199,6 +208,59 @@ importers:
       drizzle-kit:
         specifier: ^0.31.4
         version: 0.31.10
+      eslint:
+        specifier: ^9.34.0
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.41.0
+        version: 8.67.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
+
+  packages/documents:
+    dependencies:
+      unpdf:
+        specifier: 1.8.0
+        version: 1.8.0
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.34.0
+        version: 9.39.5
+      '@types/node':
+        specifier: ^22.18.0
+        version: 22.20.1
+      eslint:
+        specifier: ^9.34.0
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.41.0
+        version: 8.67.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
+
+  packages/embeddings:
+    dependencies:
+      '@ai-sdk/openai':
+        specifier: ^3.0.0
+        version: 3.0.96(zod@4.4.3)
+      ai:
+        specifier: ^6.0.0
+        version: 6.0.253(zod@4.4.3)
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.34.0
+        version: 9.39.5
+      '@types/node':
+        specifier: ^22.18.0
+        version: 22.20.1
       eslint:
         specifier: ^9.34.0
         version: 9.39.5(jiti@2.7.0)
@@ -5020,6 +5082,15 @@ packages:
   unicode-property-aliases-ecmascript@2.2.0:
     resolution: {integrity: sha512-hpbDzxUY9BFwX+UeBnxv3Sh1q7HFxj48DTmXchNgRa46lO8uj3/1iEn3MiNUYTg1g9ctIqXCCERn8gYZhHC5lQ==}
     engines: {node: '>=4'}
+
+  unpdf@1.8.0:
+    resolution: {integrity: sha512-jQlkckbe5nKxRHQdbvo9IKHlU6Cjq00UlxxB8lrCIxvS2o5IbAL1wM+4a1Yc3+BIohg9p5AsoaftwO+G4Aq/qQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@napi-rs/canvas': ^0.1.69 || ^1.0.0
+    peerDependenciesMeta:
+      '@napi-rs/canvas':
+        optional: true
 
   unpipe@1.0.0:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
@@ -10323,6 +10394,8 @@ snapshots:
   unicode-match-property-value-ecmascript@2.2.1: {}
 
   unicode-property-aliases-ecmascript@2.2.0: {}
+
+  unpdf@1.8.0: {}
 
   unpipe@1.0.0: {}
 

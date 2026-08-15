@@ -80,21 +80,27 @@
 - [x] retry/backoff and dead-letter queue
 - [x] separate durable worker runtime
 - [x] tenant-scoped minimal job payload
-- [x] file verification lifecycle (`uploading → uploaded → processing → ready/failed`)
+- [x] file ingestion lifecycle (`uploading → uploaded → processing → ready/failed`)
 - [x] storage/job unit tests
-- [ ] generated Drizzle storage migration
+- [x] generated Drizzle storage migration
 - [ ] real S3/R2 smoke test and browser CORS validation
 
 ## V0.4B2 — tenant-isolated RAG
 
-- [ ] document extraction per supported MIME
-- [ ] chunk persistence and lifecycle
-- [ ] embeddings provider abstraction
-- [ ] tenant-scoped vector retrieval
-- [ ] RAG example integrated into conversations
-- [ ] document deletion / re-index flow
+- [x] pgvector migration and local PostgreSQL image
+- [x] document extraction for PDF/text/Markdown/CSV/JSON
+- [x] deterministic chunk persistence and replacement lifecycle
+- [x] embeddings provider/runtime boundary
+- [x] fixed embedding-dimension validation
+- [x] batched embeddings in the durable worker
+- [x] tenant-scoped exact cosine retrieval
+- [x] RAG knowledge mode integrated into conversations
+- [x] source markers and live source metadata
+- [x] document deletion / re-index flow
+- [x] extraction, chunking, prompt-boundary and embedding-config tests
+- [x] defense-in-depth tenant assertion on retrieved rows
 - [ ] storage and retrieval quotas
-- [ ] extraction/retrieval integration tests
+- [ ] real pgvector + S3/R2 + embedding-provider integration smoke test
 
 ## V0.4C — platform APIs and observability
 

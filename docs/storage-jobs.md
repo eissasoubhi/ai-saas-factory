@@ -1,6 +1,6 @@
 # Storage and durable jobs
 
-V0.4B1 provides private tenant-scoped object storage and a durable PostgreSQL worker foundation for the later RAG ingestion pipeline.
+V0.4B1 provides private tenant-scoped object storage and the durable PostgreSQL worker foundation. V0.4B2 extends the same `file.ingest` job through extraction, chunking and embeddings.
 
 ## Architecture
 
@@ -18,21 +18,22 @@ Next.js ── creates file row + opaque tenant object key
   │                                           ▼
   ├── validates actual size + MIME ◄──── Next.js
   ├── marks file uploaded
-  └── enqueue file.verify ───────────────► pg-boss/PostgreSQL
+  └── enqueue file.ingest ───────────────► pg-boss/PostgreSQL
                                               │
                                               ▼
                                          apps/worker
                                               │
                                               ├── reload file by org + file ID
                                               ├── re-check stored object
-                                              └── processing → ready / failed
+                                              ├── extract + chunk + embed
+                                              └── persist vectors → ready / failed
 ```
 
 The browser never chooses an object key, bucket, organization prefix or worker storage coordinate.
 
 ## Storage configuration
 
-The adapter uses AWS SDK v3 and therefore supports AWS S3 plus S3-compatible endpoints.
+The adapter uses AWS SDK v3 and supports AWS S3 plus S3-compatible endpoints.
 
 ```env
 STORAGE_BUCKET=my-private-bucket
@@ -48,11 +49,9 @@ STORAGE_ALLOWED_CONTENT_TYPES=application/pdf,text/plain,text/markdown,text/csv,
 
 ### AWS S3
 
-Leave `STORAGE_ENDPOINT` empty and use the real AWS region. Credentials can be omitted when the runtime already provides them through the AWS credential provider chain.
+Leave `STORAGE_ENDPOINT` empty and use the actual AWS region. Credentials can be omitted when the runtime already provides them through the AWS credential provider chain.
 
 ### Cloudflare R2
-
-Use:
 
 ```env
 STORAGE_REGION=auto
@@ -61,9 +60,7 @@ STORAGE_ACCESS_KEY_ID=<R2_ACCESS_KEY_ID>
 STORAGE_SECRET_ACCESS_KEY=<R2_SECRET_ACCESS_KEY>
 ```
 
-R2 exposes an S3-compatible API and supports presigned GET/PUT URLs. Browser uploads also require an appropriate bucket CORS policy for the web application's origin. Presigned R2 URLs use the S3 API domain rather than a custom domain.
-
-A minimal development CORS policy is conceptually:
+Browser uploads require an appropriate bucket CORS policy for the web application's origin. A minimal development policy is conceptually:
 
 ```json
 [
@@ -87,32 +84,28 @@ Object keys are generated only on the server:
 org/<opaque organization segment>/files/<opaque file segment>/<sanitized filename>
 ```
 
-Organization/file identifiers are encoded into opaque URL-safe segments. User-supplied filenames are normalized and cannot add path separators.
-
 The raw key is never accepted from a browser API or pg-boss payload.
 
 ## Upload handshake
 
 1. Browser sends filename, declared MIME and size to `POST /api/files/uploads`.
-2. Server validates policy, creates a server UUID and object key, creates a short-lived presigned PUT, and persists the `uploading` file row.
-3. Browser PUTs directly to object storage with the signed `Content-Type`.
+2. Server validates policy, creates a UUID/object key, persists `uploading`, and returns a short-lived presigned PUT.
+3. Browser PUTs directly to object storage with the approved `Content-Type`.
 4. Browser calls `POST /api/files/:id/complete`.
-5. Server resolves the file under the active organization, performs `HeadObject`, and requires actual byte length + MIME to match the original server-approved declaration.
-6. Valid uploads become `uploaded` and enqueue the durable verification job. Invalid objects are deleted and marked `failed`.
+5. Server resolves the file under the active organization and requires `HeadObject` byte length + MIME to match the original declaration.
+6. Valid uploads become `uploaded` and enqueue `file.ingest`. Invalid objects are deleted and marked `failed`.
 
-The completion endpoint is retryable. If the job service is temporarily unavailable, the validated file remains `uploaded` and can be submitted again.
+The completion endpoint is retryable. If the queue is unavailable, the validated file remains `uploaded` and can be submitted again.
 
 ## Downloads and deletion
 
 `GET /api/files/:id/download` returns a short-lived presigned GET only for a `ready` file belonging to the active organization.
 
-`DELETE /api/files/:id` deletes the private object first and then soft-deletes its metadata row. The file remains in the database for audit/lifecycle purposes but disappears from the normal file list.
+`DELETE /api/files/:id` resolves the trusted object key from PostgreSQL. The RAG chunk set is removed under the tenant/file lock and metadata is soft-deleted; object deletion is performed by the file API.
 
-Treat presigned URLs like bearer tokens: anyone holding an unexpired URL can perform its signed operation. Keep TTLs short and never log URLs containing signatures.
+Treat presigned URLs like bearer tokens. Keep TTLs short and never log URLs containing signatures.
 
 ## Durable jobs
-
-V0.4B1 uses pg-boss because the product already requires PostgreSQL and pg-boss provides durable queues, retries/backoff and dead-letter behavior without adding Redis solely for jobs.
 
 ```env
 JOBS_DATABASE_URL=
@@ -128,9 +121,9 @@ Run the worker with:
 pnpm worker:start
 ```
 
-The worker starts pg-boss, creates the `file.verify` and `file.verify.dlq` queues, and processes jobs.
+The worker starts pg-boss, creates `file.ingest` plus `file.ingest.dlq`, and processes jobs with retry/backoff.
 
-The web producer does not auto-migrate the pg-boss schema. This keeps DDL privileges out of the normal web runtime. Initialize the worker/job schema during deployment before accepting uploads, or run the worker with migration enabled.
+The normal web producer does not auto-migrate the pg-boss schema. Initialize queue DDL during deployment/worker startup before accepting uploads.
 
 ## Job security and idempotence
 
@@ -143,19 +136,10 @@ A file job contains only:
 }
 ```
 
-It deliberately excludes `objectKey`. The worker reloads the file using both IDs and gets the storage key from trusted PostgreSQL state.
+It deliberately excludes `objectKey`. The worker reloads the file using both IDs and gets storage coordinates from trusted PostgreSQL state.
 
-The `file.verify` queue uses singleton behavior keyed by `fileId`, retry/backoff, and a dead-letter queue. The handler is also state-idempotent: a deleted or already-ready file is a no-op.
+`file.ingest` uses singleton behavior keyed by `fileId`, retries/backoff and a dead-letter queue. Re-indexing uses the same job. Chunk replacement is transactionally protected by a tenant/file advisory lock, so retries replace active vectors instead of accumulating duplicates.
 
-Transient storage errors mark the file failed and are re-thrown so pg-boss can retry. Deterministic size/MIME mismatches delete the object, mark the file failed, and complete the job without pointless retries.
+Deterministic storage size/MIME violations delete the invalid object and stop. Extraction, embedding and transient infrastructure failures are marked failed and re-thrown so pg-boss can retry.
 
-## Next: V0.4B2 RAG
-
-The RAG slice will start from files in `ready` state and add:
-
-- extraction per supported MIME;
-- chunk persistence;
-- embeddings provider abstraction;
-- tenant-scoped vector retrieval;
-- re-index/delete lifecycle;
-- retrieval/storage entitlements.
+See `docs/rag.md` for extraction, pgvector, embeddings, retrieval and prompt-injection controls.

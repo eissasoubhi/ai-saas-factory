@@ -22,23 +22,23 @@ export function FileActions({ fileId, status }: { fileId: string; status: string
     }
   }
 
-  async function retry() {
+  async function reindex() {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/files/${encodeURIComponent(fileId)}/complete`, { method: 'POST' });
+      const response = await fetch(`/api/files/${encodeURIComponent(fileId)}/reindex`, { method: 'POST' });
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(body?.error ?? 'Unable to retry file processing.');
+      if (!response.ok) throw new Error(body?.error ?? 'Unable to queue file indexing.');
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Retry failed.');
+      setError(cause instanceof Error ? cause.message : 'Indexing request failed.');
     } finally {
       setPending(false);
     }
   }
 
   async function remove() {
-    if (!window.confirm('Delete this file permanently from object storage?')) return;
+    if (!window.confirm('Delete this file permanently from object storage and the knowledge index?')) return;
     setPending(true);
     setError(null);
     try {
@@ -55,14 +55,17 @@ export function FileActions({ fileId, status }: { fileId: string; status: string
     }
   }
 
+  const indexLabel = status === 'ready' ? 'Re-index' : status === 'failed' ? 'Retry' : 'Index';
+  const canIndex = status === 'ready' || status === 'failed' || status === 'uploaded';
+
   return (
     <div>
       <div className="flex flex-wrap gap-2">
         {status === 'ready' ? (
           <button type="button" disabled={pending} onClick={() => void download()} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs disabled:opacity-50">Download</button>
         ) : null}
-        {status === 'failed' || status === 'uploaded' ? (
-          <button type="button" disabled={pending} onClick={() => void retry()} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs disabled:opacity-50">Retry</button>
+        {canIndex ? (
+          <button type="button" disabled={pending} onClick={() => void reindex()} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs disabled:opacity-50">{indexLabel}</button>
         ) : null}
         <button type="button" disabled={pending} onClick={() => void remove()} className="rounded-lg border border-red-900 px-3 py-2 text-xs text-red-300 disabled:opacity-50">Delete</button>
       </div>

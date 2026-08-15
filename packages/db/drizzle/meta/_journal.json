@@ -22,6 +22,13 @@
       "when": 1786809075668,
       "tag": "0002_storage_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786810328166,
+      "tag": "0003_rag_vector",
+      "breakpoints": true
     }
   ]
 }

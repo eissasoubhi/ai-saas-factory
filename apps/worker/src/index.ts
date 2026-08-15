@@ -64,7 +64,11 @@ async function processFileJob(data: unknown) {
         const embedding = embedded.embeddings[index];
         if (!embedding) throw new Error(`Missing embedding for chunk ${index}`);
         return {
-          ...chunk,
+          chunkIndex: chunk.index,
+          content: chunk.content,
+          characterStart: chunk.characterStart,
+          characterEnd: chunk.characterEnd,
+          tokenEstimate: chunk.tokenEstimate,
           embedding,
           embeddingModelId: embedded.modelId,
           metadata: {

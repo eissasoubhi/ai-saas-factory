@@ -16,12 +16,12 @@
              ┌──────────▼───────────┐
              │      PostgreSQL      │
              │ auth/org/billing/AI │
-             │ files + pg-boss     │
+             │ files/jobs/pgvector │
              └──────────▲───────────┘
                         │ durable jobs
              ┌──────────┴───────────┐
              │    apps/worker       │
-             │ background workers  │
+             │ extract/embed/index │
              └──────────┬───────────┘
                         │ trusted object keys
                         ▼
@@ -34,53 +34,36 @@
                       browser
 
              ┌──────────────────────┐
-             │     apps/mobile      │
-             │ Expo / React Native │
-             └──────────┬───────────┘
-                        │ HTTPS
-                        ▼
-                    apps/web API
-
-             ┌──────────────────────┐
-             │       Stripe         │
-             │ Checkout / Portal   │
-             └──────────┬───────────┘
-                        │ signed webhooks
-                        ▼
-                    apps/web API
-
-             ┌──────────────────────┐
              │   Model providers    │
-             │ OpenAI now; more    │
+             │ chat + embeddings   │
              └──────────▲───────────┘
-                        │ streamText
                         │
-                    apps/web API
+               apps/web + worker
 ```
 
-## Why one web server first
+## Runtime boundaries
 
-V1 deliberately keeps interactive product logic behind the Next.js server boundary instead of introducing a separate API service prematurely. This lowers deployment complexity for buyers. Long-running work is separated into `apps/worker`, and a Python service becomes optional only when AI workloads justify it.
+V1 keeps interactive product logic behind the Next.js server boundary rather than introducing a separate API service prematurely. Long-running work lives in `apps/worker`. A separate Python service remains optional only when workloads genuinely require a Python ecosystem or independent scaling boundary.
+
+The browser is never a trusted source of tenant IDs, storage coordinates, conversation history or RAG context. Server/worker code reconstructs those values from authenticated sessions and PostgreSQL state.
 
 ## Multi-tenancy
 
 Tenant context is an organization. Membership determines role. Paid feature access is derived from organization billing state and the entitlement policy package.
 
-Never authorize a resource using only an organization ID supplied by the client. Resolve membership from the authenticated session on the server.
-
-Tenant-owned AI and file data repeats `organization_id` at the persistence boundary. This is intentional defense in depth: queries can apply tenant scope directly instead of depending solely on parent joins.
+Tenant-owned AI, file and RAG data repeats `organization_id` at important persistence boundaries. This is deliberate defense in depth: queries can filter directly by tenant instead of depending only on parent joins.
 
 ## Authentication flow
 
 Better Auth owns identity, session, organization, membership and invitation persistence through the Drizzle adapter. The web application exposes the Better Auth handler under `/api/auth/*` and validates the server session again inside protected React Server Components.
 
-The active organization is persisted in the Better Auth session. New accounts are routed through `/onboarding`, while returning sessions without an active organization bootstrap the first accessible organization client-side and refresh the server component tree.
+The active organization is persisted in the Better Auth session. New accounts are routed through `/onboarding`, while returning sessions without an active organization bootstrap the first accessible organization and refresh the server component tree.
 
-Transactional email is intentionally represented as a small application boundary (`apps/web/lib/email.ts`) rather than being spread through auth callbacks. Development falls back to stdout; production requires explicit Resend configuration.
+Transactional email is isolated behind `apps/web/lib/email.ts`. Development can log mail payloads; production requires explicit provider configuration.
 
-## Billing flow
+## Billing and entitlements
 
-Billing is organization-scoped. Checkout and Customer Portal routes resolve the active organization from the authenticated session and never accept a tenant ID from the client.
+Billing is organization-scoped. Checkout and Customer Portal routes resolve the active organization from the authenticated session and never accept a tenant ID from the browser.
 
 ```text
 owner/admin
@@ -97,24 +80,9 @@ settings/billing ◄──────────── local subscription row
                               entitlement policy
 ```
 
-The browser success redirect is informational only. Paid access is granted from the local subscription state after a verified webhook is processed.
+The browser success redirect is informational only. Paid access is granted from local subscription state after verified provider events are processed.
 
-`webhook_event` provides event-ID idempotency, retry metadata and an expiring processing claim. `subscription.provider_updated_at` prevents an older Stripe event from overwriting newer provider state.
-
-Stripe transport is isolated behind `apps/web/lib/stripe.ts`. The initial implementation uses Stripe's form-encoded REST API directly, which keeps the starter dependency-light while preserving a narrow boundary that can be replaced by the official SDK without changing product code.
-
-## Entitlement enforcement
-
-The `packages/entitlements` package contains static plan limits, while the effective plan is resolved from server-side subscription state.
-
-Enforcement happens at server boundaries:
-
-- Better Auth organization hooks reject invitations or member additions beyond the seat limit.
-- the AI route reserves monthly request entitlement before calling the model provider;
-- the same reservation enforces an organization-level one-minute burst limit;
-- UI pages display entitlement state but are not trusted for authorization.
-
-A subscription receives paid entitlements only while its provider status is `active` or `trialing`. Other states fail closed to Free access.
+Server boundaries enforce entitlements: Better Auth organization hooks enforce seats, and the AI route atomically reserves monthly request quota plus an organization-level minute burst quota before provider calls.
 
 ## AI runtime
 
@@ -125,15 +93,15 @@ browser message
 POST /api/ai/chat
       │
       ├─ session + active organization
-      ├─ conversation lookup scoped by organization
+      ├─ tenant-scoped conversation lookup
       ├─ provider:model allow-list
-      ├─ pricing config validation
-      ├─ plan resolution
-      ├─ PostgreSQL advisory lock
-      │     └─ reserve monthly + minute request quota
+      ├─ pricing validation
+      ├─ atomic request quota reservation
+      ├─ optional RAG retrieval
       ├─ persist user message
-      ├─ reload server-owned message history
-      ▼
+      └─ reload server-owned history
+             │
+             ▼
 AI SDK streamText ───────────────► model provider
       │                              │
       │ text stream                  │ provider usage
@@ -145,21 +113,15 @@ AI SDK streamText ───────────────► model provide
                                      └─ token/cost usage events
 ```
 
-The client sends only a new user message plus an optional conversation/model ID. It cannot send trusted history. Model context is reconstructed from persisted tenant-scoped messages.
+The client sends only a new user message plus optional conversation/model/knowledge-mode fields. It cannot send trusted conversation history. Streaming is also consumed server-side so final persistence can complete after a browser disconnect.
 
-`apps/web/lib/ai-models.ts` owns the model registry and deployment allow-list. Product code uses stable `provider:model` IDs rather than provider-specific constructors.
-
-Quota reservation is serialized per organization with a PostgreSQL transaction-scoped advisory lock. The monthly count, rolling one-minute count and new `ai.requests` event are handled while the lock is held, closing the usual concurrency hole around quota checks.
-
-The HTTP response is a plain text stream. `consumeStream()` also consumes the result on the server so generation finalization can continue after a browser disconnect. The `onFinish` callback persists provider-reported token counts and optional deployment-configured cost estimates.
-
-`ai_generation` is the per-generation ledger. `usage_event` remains the immutable metric ledger used for request, token and cost aggregation. See `docs/ai-runtime.md` for configuration and operational details.
+`apps/web/lib/ai-models.ts` owns chat model selection. `packages/embeddings` owns the embedding-model boundary. Both use stable deployment configuration rather than scattering provider constructors through product code.
 
 ## File storage flow
 
 ```text
 browser
-  │ upload metadata only
+  │ metadata only
   ▼
 POST /api/files/uploads
   │
@@ -172,29 +134,23 @@ POST /api/files/uploads
         ▼
  S3-compatible storage
         │
-        │ browser calls completion
+        │ completion handshake
         ▼
 POST /api/files/:id/complete
   │
   ├─ tenant-scoped file lookup
   ├─ HeadObject
   ├─ exact size/MIME verification
-  └─ enqueue file.verify
+  └─ enqueue file.ingest
 ```
 
-`packages/storage` is the only storage transport boundary. It uses the S3 protocol and configuration rather than embedding AWS/R2-specific product logic. Object keys are generated on the server from opaque tenant/file segments; APIs never accept a raw object key from the client.
+`packages/storage` is the storage transport boundary. Browser file bytes go directly to the object store through short-lived presigned capabilities; application credentials and raw object keys remain server-side.
 
-The browser uploads directly to storage using a short-lived presigned PUT. This keeps file bytes out of the Next.js request path. Completion is a second server handshake that verifies actual object metadata before the file can enter durable processing.
+Private downloads receive a short-lived presigned GET only after a tenant-scoped lookup confirms a ready file. See `docs/storage-jobs.md` for provider and CORS configuration.
 
-Private downloads use a short-lived presigned GET only after a tenant-scoped lookup confirms the file is `ready`. Deletion resolves the trusted object key from PostgreSQL, removes the object, then soft-deletes metadata.
+## Durable ingestion flow
 
-See `docs/storage-jobs.md` for provider/CORS configuration and operational details.
-
-## Durable job flow
-
-`packages/jobs` wraps pg-boss. The product already requires PostgreSQL, so durable file jobs can reuse that infrastructure instead of making Redis mandatory only for a queue.
-
-The web runtime acts as a producer. `apps/worker` is a separate persistent process that owns workers and queue supervision.
+`packages/jobs` wraps pg-boss on the existing PostgreSQL database. The web runtime is a producer; `apps/worker` is a separate persistent process that owns queue supervision and long-running ingestion.
 
 ```text
 web producer
@@ -205,13 +161,50 @@ pg-boss / PostgreSQL
    ▼
 apps/worker
    │
-   ├─ parse minimal job contract
-   ├─ reload file by organization + file ID
-   ├─ obtain trusted object key from DB
+   ├─ parse minimal tenant-scoped job
+   ├─ reload file + trusted object key
    ├─ verify storage object
-   └─ transition processing → ready / failed
+   ├─ read private bytes
+   ├─ extract text
+   ├─ deterministic chunking
+   ├─ batch embeddings
+   └─ atomic chunk replacement → ready
 ```
 
-Queue payloads deliberately exclude raw storage coordinates and credentials. Worker handlers repeat the tenant lookup before touching object storage. Missing, deleted or already-ready resources are idempotent no-ops.
+Queue payloads exclude storage coordinates and credentials. Re-indexing uses the same ingestion job and an advisory lock keyed by tenant/file, so retries replace the active chunk set instead of accumulating duplicates.
 
-The normal web producer does not own queue DDL migration privileges. Deployment/worker startup initializes pg-boss before uploads are accepted in an environment.
+## RAG persistence and retrieval
+
+Local PostgreSQL uses the pgvector-enabled PostgreSQL 17 image. Migration `0003_rag_vector.sql` enables `vector` and creates `document_chunk` with `vector(1536)` embeddings.
+
+```text
+user question
+    │
+    ▼
+embedding model
+    │ query vector
+    ▼
+PostgreSQL exact cosine search
+    │
+    ├─ document_chunk.organization_id = active org
+    ├─ stored_file.organization_id = active org
+    ├─ stored_file.status = ready
+    └─ stored_file.deleted_at IS NULL
+    │
+    ▼
+assertOrganizationScope
+    │
+    ▼
+<knowledge> untrusted context + [S1] markers
+    │
+    ▼
+chat model
+```
+
+The baseline intentionally uses exact cosine similarity instead of an approximate vector index. This preserves recall and keeps tenant filters straightforward. HNSW is a later scale optimization when measured dataset size and latency justify it.
+
+Retrieved document text is explicitly treated as untrusted reference data. Source content stays server-side; the browser receives only compact source metadata for the live answer.
+
+Deleting a file removes its chunks under the same per-file advisory lock before the file is soft-deleted. Re-indexing transactionally replaces old chunks with new vectors and marks the file ready only after successful persistence.
+
+See `docs/rag.md` for configuration, limits, security behavior and the production smoke-test checklist.

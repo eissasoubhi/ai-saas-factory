@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@factory/db": "workspace:*",
+    "@factory/documents": "workspace:*",
+    "@factory/embeddings": "workspace:*",
     "@factory/jobs": "workspace:*",
     "@factory/storage": "workspace:*",
     "tsx": "4.23.12"

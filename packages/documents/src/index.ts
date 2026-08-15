@@ -67,6 +67,11 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 }
 
+async function destroyPdfProxy(proxy: unknown) {
+  const destroy = (proxy as { destroy?: () => Promise<unknown> }).destroy;
+  if (typeof destroy === 'function') await destroy.call(proxy).catch(() => undefined);
+}
+
 export async function extractDocumentText(input: {
   contentType: string;
   bytes: Uint8Array;
@@ -76,7 +81,10 @@ export async function extractDocumentText(input: {
   const limits = documentLimits(input.env);
 
   if (TEXT_CONTENT_TYPES.has(contentType)) {
-    const text = assertExtractedSize(normalizeText(new TextDecoder('utf-8', { fatal: false }).decode(input.bytes)), limits.maxExtractedChars);
+    const text = assertExtractedSize(
+      normalizeText(new TextDecoder('utf-8', { fatal: false }).decode(input.bytes)),
+      limits.maxExtractedChars,
+    );
     if (!text) throw new Error('Document contains no extractable text');
     return { text, pageCount: null };
   }
@@ -84,7 +92,7 @@ export async function extractDocumentText(input: {
   if (contentType === 'application/pdf') {
     const pdf = await withTimeout(getDocumentProxy(input.bytes), limits.extractionTimeoutMs);
     if (pdf.numPages > limits.maxPages) {
-      await pdf.destroy();
+      await destroyPdfProxy(pdf);
       throw new Error(`PDF has ${pdf.numPages} pages; the configured limit is ${limits.maxPages}`);
     }
 
@@ -94,7 +102,7 @@ export async function extractDocumentText(input: {
       if (!text) throw new Error('PDF contains no extractable text');
       return { text, pageCount: result.totalPages };
     } finally {
-      await pdf.destroy().catch(() => undefined);
+      await destroyPdfProxy(pdf);
     }
   }
 
@@ -139,8 +147,7 @@ export function chunkDocumentText(
       });
     }
     if (end >= text.length) break;
-    const nextStart = Math.max(start + 1, end - overlapChars);
-    start = nextStart;
+    start = Math.max(start + 1, end - overlapChars);
   }
 
   return chunks;

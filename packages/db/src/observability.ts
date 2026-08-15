@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, lt, or, sql, sum } from 'drizzle-orm';
+import { assertOrganizationScope } from './ai-policy';
 import { database } from './index';
 import { auditLog, usageEvent, user } from './schema';
 
@@ -26,6 +27,10 @@ export function decodeAuditCursor(value: string | null | undefined): AuditCursor
   }
 }
 
+export function normalizeAuditLimit(value: number | undefined) {
+  return Math.min(Math.max(Math.floor(value ?? 50), 1), 100);
+}
+
 function boundedFilter(value: string | null | undefined) {
   const normalized = value?.trim();
   if (!normalized || normalized.length > 100) return null;
@@ -40,7 +45,7 @@ export async function listAuditLogsForOrganization(input: {
   entityType?: string | null;
 }) {
   const db = database();
-  const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100);
+  const limit = normalizeAuditLimit(input.limit);
   const cursor = decodeAuditCursor(input.cursor);
   const action = boundedFilter(input.action);
   const entityType = boundedFilter(input.entityType);
@@ -58,6 +63,7 @@ export async function listAuditLogsForOrganization(input: {
 
   const rows = await db
     .select({
+      organizationId: auditLog.organizationId,
       id: auditLog.id,
       actorUserId: auditLog.actorUserId,
       actorEmail: user.email,
@@ -73,6 +79,10 @@ export async function listAuditLogsForOrganization(input: {
     .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
     .limit(limit + 1);
 
+  assertOrganizationScope(
+    input.organizationId,
+    rows.map((row) => ({ ...row, organizationId: row.organizationId ?? '' })),
+  );
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
   const last = items.at(-1);

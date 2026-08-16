@@ -19,6 +19,7 @@ import { estimateAiCostMicros, parseModelPricingJson } from '@/lib/ai-pricing';
 import { resolveAiModel } from '@/lib/ai-models';
 import { recordAuditEvent } from '@/lib/audit';
 import { auth } from '@/lib/auth';
+import { publishOutboundWebhookEvent } from '@/lib/outbound-events';
 import {
   buildRagSystemContext,
   encodeRagSourcesHeader,
@@ -314,6 +315,40 @@ export async function POST(request: Request) {
           retrievedChunks: retrievedChunks.length,
         },
       });
+
+      try {
+        await publishOutboundWebhookEvent({
+          organizationId,
+          type: 'ai.generation.completed',
+          eventId: `evt_ai_generation_${generation.id}`,
+          correlationId,
+          data: {
+            generationId: generation.id,
+            conversationId: existingConversation.id,
+            provider: resolvedModel.provider,
+            modelId: resolvedModel.modelId,
+            finishReason,
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            estimatedCostMicros,
+            durationMs,
+            useKnowledge: body?.useKnowledge === true,
+            retrievedChunks: retrievedChunks.length,
+          },
+        });
+      } catch (error) {
+        emitTelemetry({
+          name: 'web.outbound_webhook.publish_failed',
+          level: 'error',
+          component: 'web',
+          correlationId,
+          organizationId,
+          userId: session.user.id,
+          attributes: { eventId: `evt_ai_generation_${generation.id}`, eventType: 'ai.generation.completed' },
+          error,
+        });
+      }
     },
   });
 

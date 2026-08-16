@@ -7,7 +7,13 @@ import {
 } from '@factory/db';
 import { chunkDocumentText, documentLimits, extractDocumentText } from '@factory/documents';
 import { embedTexts } from '@factory/embeddings';
-import { createFileWorkerBoss, FILE_INGEST_QUEUE, FileIngestJobSchema } from '@factory/jobs';
+import {
+  createWorkerBoss,
+  FILE_INGEST_QUEUE,
+  FileIngestJobSchema,
+  OUTBOUND_WEBHOOK_DELIVERY_DLQ,
+  OUTBOUND_WEBHOOK_DELIVERY_QUEUE,
+} from '@factory/jobs';
 import {
   deleteStoredObject,
   headStoredObject,
@@ -15,6 +21,7 @@ import {
   validateStoredObject,
 } from '@factory/storage';
 import { emitTelemetry } from '@factory/telemetry';
+import { processOutboundWebhookDeadLetter, processOutboundWebhookDelivery } from './webhook-delivery';
 
 async function processFileJob(data: unknown) {
   const payload = FileIngestJobSchema.parse(data);
@@ -106,8 +113,8 @@ async function processFileJob(data: unknown) {
 }
 
 async function main() {
-  const boss = await createFileWorkerBoss();
-  const workerId = await boss.work(FILE_INGEST_QUEUE, async (jobs) => {
+  const boss = await createWorkerBoss();
+  const fileWorkerId = await boss.work(FILE_INGEST_QUEUE, async (jobs) => {
     for (const job of jobs) {
       const startedAt = Date.now();
       const correlationId = String(job.id);
@@ -144,11 +151,27 @@ async function main() {
     }
   });
 
+  const webhookWorkerId = await boss.work(OUTBOUND_WEBHOOK_DELIVERY_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      await processOutboundWebhookDelivery(job.data, String(job.id));
+    }
+  });
+
+  const webhookDeadLetterWorkerId = await boss.work(OUTBOUND_WEBHOOK_DELIVERY_DLQ, async (jobs) => {
+    for (const job of jobs) {
+      await processOutboundWebhookDeadLetter(job.data, String(job.id));
+    }
+  });
+
   emitTelemetry({
     name: 'worker.started',
     component: 'worker',
-    correlationId: String(workerId),
-    attributes: { queue: FILE_INGEST_QUEUE },
+    correlationId: String(fileWorkerId),
+    attributes: {
+      queues: [FILE_INGEST_QUEUE, OUTBOUND_WEBHOOK_DELIVERY_QUEUE, OUTBOUND_WEBHOOK_DELIVERY_DLQ],
+      webhookWorkerId: String(webhookWorkerId),
+      webhookDeadLetterWorkerId: String(webhookDeadLetterWorkerId),
+    },
   });
 
   let stopping = false;

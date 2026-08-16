@@ -30,3 +30,12 @@ export async function requireBillingManager(requestHeaders: Headers) {
   }
   return { ok: true as const, context };
 }
+
+export async function requirePlatformManager(requestHeaders: Headers) {
+  const context = await getActiveOrganizationContext(requestHeaders);
+  if (!context) return { ok: false as const, status: 401, error: 'Authentication and an active workspace are required.' };
+  if (context.role !== 'owner' && context.role !== 'admin') {
+    return { ok: false as const, status: 403, error: 'Only workspace owners and admins can manage API keys and webhooks.' };
+  }
+  return { ok: true as const, context };
+}

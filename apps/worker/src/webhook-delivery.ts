@@ -12,7 +12,6 @@ import { emitTelemetry } from '@factory/telemetry';
 
 function encryptedSecretFromDelivery(delivery: Awaited<ReturnType<typeof getWebhookDeliveryForWorker>>) {
   if (!delivery) throw new Error('Webhook delivery does not exist');
-  if (delivery.secretVersion !== 1) throw new Error('Unsupported webhook secret version');
   return {
     version: 1 as const,
     ciphertext: delivery.secretCiphertext,
@@ -54,7 +53,6 @@ export async function processOutboundWebhookDelivery(data: unknown, correlationI
   const attempt = await beginWebhookDeliveryAttempt(delivery.id);
   const attemptCount = attempt?.attemptCount ?? delivery.attemptCount + 1;
   let responseStatus: number | null = null;
-  let responseBodyPreview: string | null = null;
   try {
     const secret = decryptSecret(encryptedSecretFromDelivery(delivery), platformEncryptionKey());
     const body = JSON.stringify(delivery.payload);
@@ -66,7 +64,6 @@ export async function processOutboundWebhookDelivery(data: unknown, correlationI
       secret,
     });
     responseStatus = response.status;
-    responseBodyPreview = response.bodyPreview;
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Webhook endpoint returned HTTP ${response.status}`);
     }
@@ -75,7 +72,6 @@ export async function processOutboundWebhookDelivery(data: unknown, correlationI
       deliveryId: delivery.id,
       endpointId: delivery.endpointId,
       responseStatus: response.status,
-      responseBodyPreview: response.bodyPreview,
     });
     emitTelemetry({
       name: 'worker.webhook_delivery.completed',
@@ -97,7 +93,6 @@ export async function processOutboundWebhookDelivery(data: unknown, correlationI
       deliveryId: delivery.id,
       error,
       responseStatus,
-      responseBodyPreview,
     });
     emitTelemetry({
       name: 'worker.webhook_delivery.failed',
@@ -111,6 +106,7 @@ export async function processOutboundWebhookDelivery(data: unknown, correlationI
         endpointId: delivery.endpointId,
         eventType: delivery.eventType,
         attemptCount,
+        secretVersion: delivery.secretVersion,
         ...(responseStatus !== null ? { responseStatus } : {}),
       },
       error,

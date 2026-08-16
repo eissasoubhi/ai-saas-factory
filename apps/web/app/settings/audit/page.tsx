@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getActiveOrganizationContext } from '@/lib/organization-access';
 
-function queryString(input: { cursor?: string | null; action?: string; entityType?: string }) {
+function queryString(input: {
+  cursor?: string | null | undefined;
+  action?: string | undefined;
+  entityType?: string | undefined;
+}) {
   const query = new URLSearchParams();
   if (input.cursor) query.set('cursor', input.cursor);
   if (input.action) query.set('action', input.action);
@@ -26,10 +30,10 @@ export default async function AuditLogPage({
   const params = await searchParams;
   const page = await listAuditLogsForOrganization({
     organizationId: context.organization.id,
-    cursor: params.cursor,
-    action: params.action,
-    entityType: params.entityType,
     limit: 50,
+    ...(params.cursor ? { cursor: params.cursor } : {}),
+    ...(params.action ? { action: params.action } : {}),
+    ...(params.entityType ? { entityType: params.entityType } : {}),
   });
 
   return (

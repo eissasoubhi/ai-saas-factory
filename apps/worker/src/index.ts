@@ -135,7 +135,7 @@ async function main() {
           component: 'worker',
           correlationId,
           durationMs: Date.now() - startedAt,
-          organizationId: parsed.success ? parsed.data.organizationId : undefined,
+          ...(parsed.success ? { organizationId: parsed.data.organizationId } : {}),
           attributes: parsed.success ? { fileId: parsed.data.fileId } : { invalidPayload: true },
           error,
         });

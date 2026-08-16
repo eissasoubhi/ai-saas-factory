@@ -1,4 +1,4 @@
-import { rotateApiKeyRecord } from '@factory/db';
+import { getApiKeyForOrganization, rotateApiKeyRecord } from '@factory/db';
 import { generateApiKey, normalizeApiKeyScopes } from '@factory/platform-security';
 import { correlationIdFromHeaders, emitTelemetry } from '@factory/telemetry';
 import { recordAuditEvent } from '@/lib/audit';
@@ -11,10 +11,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const correlationId = correlationIdFromHeaders(request.headers);
   const access = await requirePlatformManager(request.headers);
   if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
-  const body = await request.json().catch(() => null);
-  const parsed = ApiKeyCreateSchema.safeParse(body);
-  if (!parsed.success) return Response.json({ error: 'Invalid replacement API key configuration.' }, { status: 400 });
   const { id } = await context.params;
+  const current = await getApiKeyForOrganization(access.context.organization.id, id);
+  if (!current || current.revokedAt) return Response.json({ error: 'API key not found or already revoked.' }, { status: 404 });
+
+  const body = await request.json().catch(() => null);
+  const parsed = body == null ? null : ApiKeyCreateSchema.safeParse(body);
+  if (parsed && !parsed.success) {
+    return Response.json({ error: 'Invalid replacement API key configuration.' }, { status: 400 });
+  }
   const generated = generateApiKey();
   const replacement = await rotateApiKeyRecord({
     organizationId: access.context.organization.id,
@@ -22,11 +27,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     replacement: {
       id: generated.id,
       createdByUserId: access.context.session.user.id,
-      name: parsed.data.name,
+      name: parsed?.data.name ?? current.name,
       keyPrefix: generated.prefix,
       keyHash: generated.hash,
-      scopes: normalizeApiKeyScopes(parsed.data.scopes),
-      expiresAt: expirationFromDays(parsed.data.expiresInDays),
+      scopes: normalizeApiKeyScopes(parsed?.data.scopes ?? current.scopes),
+      expiresAt: parsed ? expirationFromDays(parsed.data.expiresInDays) : current.expiresAt,
     },
   });
   if (!replacement) return Response.json({ error: 'API key not found or already revoked.' }, { status: 404 });

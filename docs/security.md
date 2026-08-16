@@ -93,6 +93,23 @@
 - Correlation IDs accept only a bounded safe character set from `x-request-id`; invalid/missing values are replaced with a generated UUID.
 - Application code must not bypass the shared sanitizer by logging raw request headers/bodies or provider payloads directly.
 
+## Platform API and outbound webhook controls
+
+- API-key management is session-authenticated and restricted to workspace owners/admins. Browser requests never choose the tenant being managed.
+- Raw API keys are high-entropy opaque bearer credentials returned only at creation/rotation. PostgreSQL stores a key id, display prefix, scopes/lifecycle metadata and a SHA-256 hash of the complete token, never the raw token.
+- API-key authentication derives the organization from the matching key row, rejects revoked/expired keys and checks the required scope before the route runs.
+- The public V1 file example returns tenant-scoped metadata only; internal object keys, storage credentials and presigned URLs are excluded.
+- Webhook signing secrets are returned only at endpoint creation/rotation and are encrypted at rest with AES-256-GCM using `PLATFORM_SECRET_ENCRYPTION_KEY`.
+- `PLATFORM_SECRET_ENCRYPTION_KEY` must remain stable across web/worker runtimes. Rotating it requires a planned re-encryption migration for stored webhook secrets.
+- Customer webhook jobs contain only `deliveryId`. The worker reloads the endpoint URL, payload and encrypted secret from trusted PostgreSQL state.
+- Webhook signatures cover timestamp, stable event id and the exact JSON body with HMAC-SHA256. Consumers should additionally enforce timestamp freshness and idempotent event-id processing.
+- Webhook endpoints must use public HTTPS. URL credentials/fragments, localhost/local names and private/link-local/loopback/multicast/documentation-range DNS answers are rejected.
+- DNS is revalidated for every delivery and the accepted public address is pinned into the HTTPS connection while preserving TLS SNI for the original hostname. Redirects are not followed.
+- Outbound payloads are bounded and pass through the shared sanitizer before persistence/enqueueing. Default events contain IDs/status/usage metadata, not prompts, model output, document bodies, object keys or provider credentials.
+- Non-2xx responses and network errors are retried through pg-boss. Exhausted deliveries move to a dedicated dead-letter queue and are marked `dead` in the tenant-scoped delivery log.
+- Disabled/deleted endpoints do not receive new events and pending jobs are cancelled when the worker reloads an inactive endpoint.
+- Customer response bodies are not persisted or displayed; only bounded error text and HTTP status are retained for delivery troubleshooting.
+
 ## Required pre-launch review
 
 - auth/session configuration
@@ -122,4 +139,10 @@
 - log/audit retention, access control and export/delete policy
 - verify production log drains do not add raw request headers/bodies around the shared sanitizer
 - confirm configured AI cost estimates against provider billing data
+- API-key revocation/expiry/scope integration tests with two organizations
+- API-key brute-force/rate-limit policy for public V1 routes
+- live public HTTPS webhook receiver test including signature freshness and duplicate event-id handling
+- webhook DNS rebinding/private-network regression tests
+- webhook dead-letter redrive/operator procedure
+- deployment-key rotation procedure for encrypted webhook secrets
 - rate limiting and abuse controls beyond the organization request limiter

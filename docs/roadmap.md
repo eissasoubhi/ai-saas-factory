@@ -102,14 +102,30 @@
 - [ ] storage and retrieval quotas
 - [ ] real pgvector + S3/R2 + embedding-provider integration smoke test
 
-## V0.4C — platform APIs and observability
+## V0.4C1 — audit, usage and observability
 
-- [ ] audit log viewer
-- [ ] API keys
-- [ ] outbound customer webhooks
-- [ ] AI cost/usage dashboard
+- [x] tenant-scoped audit log viewer
+- [x] bounded deterministic audit cursor pagination
+- [x] audit events for organization/member, billing, file/RAG and AI generation actions
+- [x] AI usage and configured-cost dashboard
+- [x] daily and per-model usage breakdowns
+- [x] owner/admin-only cost visibility
+- [x] structured application telemetry boundary
+- [x] request/correlation IDs across web and worker events
+- [x] recursive redaction of secrets, auth material, prompts, document content and signed URLs
+- [x] worker ingestion duration/result telemetry
+- [x] pagination, aggregation and telemetry-redaction tests
+
+## V0.4C2 — platform APIs and customer webhooks
+
+- [ ] organization API keys
+- [ ] API key hashing, scopes, rotation and revocation
+- [ ] outbound customer webhook endpoints
+- [ ] signed webhook deliveries
+- [ ] durable delivery retries and dead-letter handling
+- [ ] delivery log UI
+- [ ] API/webhook tenant-isolation tests
 - [ ] usage credits and overage model
-- [ ] structured application telemetry
 
 ## V0.5 — mobile
 

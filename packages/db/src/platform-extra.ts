@@ -2,7 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { assertOrganizationScope } from './ai-policy';
 import { database } from './index';
-import { outboundWebhookDelivery, outboundWebhookEndpoint } from './platform-schema';
+import { apiKey, outboundWebhookDelivery, outboundWebhookEndpoint } from './platform-schema';
+
+export async function getApiKeyForOrganization(organizationId: string, keyId: string) {
+  const [row] = await database()
+    .select()
+    .from(apiKey)
+    .where(and(eq(apiKey.id, keyId), eq(apiKey.organizationId, organizationId)))
+    .limit(1);
+  if (row) assertOrganizationScope(organizationId, [row]);
+  return row ?? null;
+}
 
 export async function createWebhookDeliveryForEndpoint(input: {
   organizationId: string;

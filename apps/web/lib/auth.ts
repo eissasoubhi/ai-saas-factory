@@ -99,6 +99,7 @@ export const auth = betterAuth({
           });
         },
         async afterUpdateOrganization({ organization: updatedOrganization, user }) {
+          if (!updatedOrganization) return;
           await recordAuditEvent({
             organizationId: updatedOrganization.id,
             actorUserId: user.id,

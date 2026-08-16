@@ -41,6 +41,7 @@ export default async function DashboardPage() {
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/ai">AI</Link>
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/files">Files</Link>
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/settings/team">Team</Link>
+          <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/settings/platform">Platform</Link>
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" href="/settings/billing">Billing</Link>
           <span className="rounded-full border border-zinc-700 px-4 py-2 text-sm capitalize">{plan}</span>
           <SignOutButton />
@@ -59,6 +60,7 @@ export default async function DashboardPage() {
         <div className="mt-5 flex flex-wrap gap-3">
           <Link className="inline-block rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black" href="/ai">Open AI workspace</Link>
           <Link className="inline-block rounded-lg border border-zinc-700 px-4 py-2 text-sm" href="/files">Manage files</Link>
+          <Link className="inline-block rounded-lg border border-zinc-700 px-4 py-2 text-sm" href="/settings/platform">Manage API & webhooks</Link>
         </div>
       </section>
     </main>

@@ -72,6 +72,7 @@ export async function processOutboundWebhookDelivery(data: unknown, correlationI
       deliveryId: delivery.id,
       endpointId: delivery.endpointId,
       responseStatus: response.status,
+      responseBodyPreview: '',
     });
     emitTelemetry({
       name: 'worker.webhook_delivery.completed',
@@ -93,6 +94,7 @@ export async function processOutboundWebhookDelivery(data: unknown, correlationI
       deliveryId: delivery.id,
       error,
       responseStatus,
+      responseBodyPreview: null,
     });
     emitTelemetry({
       name: 'worker.webhook_delivery.failed',

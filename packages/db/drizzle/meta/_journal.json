@@ -29,6 +29,13 @@
       "when": 1786810328166,
       "tag": "0003_rag_vector",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786903613528,
+      "tag": "0004_sturdy_thor",
+      "breakpoints": true
     }
   ]
 }

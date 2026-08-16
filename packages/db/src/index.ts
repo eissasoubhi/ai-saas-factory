@@ -2,8 +2,9 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as baseSchema from './schema';
 import * as ragSchema from './rag-schema';
+import * as platformSchema from './platform-schema';
 
-const schema = { ...baseSchema, ...ragSchema };
+const schema = { ...baseSchema, ...ragSchema, ...platformSchema };
 
 let cached: ReturnType<typeof createDb> | undefined;
 
@@ -27,4 +28,5 @@ export * from './ai-policy';
 export * from './billing';
 export * from './files';
 export * from './observability';
+export * from './platform';
 export * from './rag';

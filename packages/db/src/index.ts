@@ -29,4 +29,5 @@ export * from './billing';
 export * from './files';
 export * from './observability';
 export * from './platform';
+export * from './platform-extra';
 export * from './rag';

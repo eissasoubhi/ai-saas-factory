@@ -208,3 +208,31 @@ Retrieved document text is explicitly treated as untrusted reference data. Sourc
 Deleting a file removes its chunks under the same per-file advisory lock before the file is soft-deleted. Re-indexing transactionally replaces old chunks with new vectors and marks the file ready only after successful persistence.
 
 See `docs/rag.md` for configuration, limits, security behavior and the production smoke-test checklist.
+
+## Audit, usage and telemetry
+
+V0.4C1 keeps three signals separate:
+
+```text
+product action
+   │
+   ├─ durable audit event ─────────► audit_log / PostgreSQL
+   │                                   │
+   │                                   └─ /settings/audit
+   │
+   ├─ immutable usage event ───────► usage_event / PostgreSQL
+   │                                   │
+   │                                   └─ /settings/usage
+   │
+   └─ sanitized runtime event ─────► JSON stdout/stderr
+                                       │
+                                       └─ deployment log pipeline
+```
+
+Audit and usage queries always derive the tenant from the authenticated active organization. Audit pagination uses a deterministic descending `(createdAt, id)` cursor, and returned audit rows pass a second organization assertion before rendering.
+
+`packages/telemetry` is the vendor-neutral operational boundary used by web and worker runtimes. It generates/reuses correlation IDs and recursively removes auth material, secrets, prompts, document/request/response content and signed URLs before JSON serialization.
+
+AI generation completion writes usage metrics and a bounded audit record containing IDs/model/tokens/cost/duration only. Worker ingestion emits duration/result events around durable jobs. Neither path sends customer prompt/document text through the telemetry boundary.
+
+Audit failures after an external side effect are non-fatal: the primary product action remains successful and the failed audit write becomes structured error telemetry. See `docs/observability.md` for retention, routing and pre-launch checks.

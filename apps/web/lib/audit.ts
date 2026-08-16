@@ -26,9 +26,9 @@ export async function recordAuditEvent(input: {
       name: 'web.audit_write.failed',
       level: 'error',
       component: 'web',
-      correlationId: input.correlationId,
+      ...(input.correlationId !== undefined ? { correlationId: input.correlationId } : {}),
       organizationId: input.organizationId,
-      userId: input.actorUserId,
+      ...(input.actorUserId !== undefined ? { userId: input.actorUserId } : {}),
       attributes: {
         action: input.action,
         entityType: input.entityType,

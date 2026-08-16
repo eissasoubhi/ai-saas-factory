@@ -27,7 +27,7 @@
 - Webhook timestamps outside the five-minute tolerance window are rejected to reduce replay risk.
 - Provider event IDs are unique in `webhook_event`, making completed event replays safe.
 - Failed or abandoned processing claims can be retried without applying a successfully completed event twice.
-- `subscription.provider_updated_at` prevents an older provider event from overwriting newer subscription state.
+- `subscription.provider_updated_at` prevents an older provider event from overwriting newer provider state.
 - A Stripe customer already mapped to one workspace cannot silently be reassigned through conflicting webhook metadata.
 - Paid plan entitlements are granted only for `active` or `trialing` subscriptions; other provider states fail closed to Free access.
 - Team seat limits are enforced in Better Auth organization hooks, not only in the settings UI.
@@ -79,6 +79,20 @@
 - Source headers contain only compact file/chunk metadata, not document content or storage coordinates.
 - Embedding and query-embedding token usage is metered as `ai.embedding_tokens`.
 
+## Audit and telemetry controls
+
+- Audit and usage pages derive the organization from the authenticated active session. Browser query parameters can filter action/entity/cursor but cannot choose a tenant.
+- Audit SQL is scoped by `organization_id`, and returned rows pass a second organization assertion before rendering.
+- Cost visibility is restricted to workspace owners/admins even though token/request usage is tenant-scoped for all authorized workspace users.
+- Audit metadata passes through the shared telemetry sanitizer before persistence.
+- Structured telemetry recursively redacts authorization/cookie values, passwords, provider/storage/webhook secrets, API/session/access/refresh tokens, prompts, messages, document/request/response bodies and signed URLs.
+- Signed URL detection also checks string values under otherwise safe attribute names, reducing accidental leakage of presigned S3/R2 capabilities.
+- Error telemetry contains a bounded error name/message only; the shared event object does not serialize stack traces.
+- AI success telemetry records IDs, provider/model, token counts, configured cost estimate, duration, knowledge-mode flag and retrieved chunk count — never the prompt, model output or retrieved document text.
+- Audit writes are non-fatal after a primary product side effect succeeds. A failed audit write emits structured error telemetry rather than returning a false product failure.
+- Correlation IDs accept only a bounded safe character set from `x-request-id`; invalid/missing values are replaced with a generated UUID.
+- Application code must not bypass the shared sanitizer by logging raw request headers/bodies or provider payloads directly.
+
 ## Required pre-launch review
 
 - auth/session configuration
@@ -105,4 +119,7 @@
 - extraction resource-exhaustion tests with malformed/large PDFs
 - re-index/delete races while RAG queries are active
 - storage/retrieval quota policy
+- log/audit retention, access control and export/delete policy
+- verify production log drains do not add raw request headers/bodies around the shared sanitizer
+- confirm configured AI cost estimates against provider billing data
 - rate limiting and abuse controls beyond the organization request limiter

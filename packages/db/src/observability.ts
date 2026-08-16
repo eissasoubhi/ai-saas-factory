@@ -8,6 +8,11 @@ export type AuditCursor = {
   id: string;
 };
 
+export type UsageMetricRow = {
+  metric: string;
+  value: string | number | null;
+};
+
 export function encodeAuditCursor(cursor: AuditCursor) {
   return Buffer.from(`${cursor.createdAt.toISOString()}\n${cursor.id}`, 'utf8').toString('base64url');
 }
@@ -29,6 +34,18 @@ export function decodeAuditCursor(value: string | null | undefined): AuditCursor
 
 export function normalizeAuditLimit(value: number | undefined) {
   return Math.min(Math.max(Math.floor(value ?? 50), 1), 100);
+}
+
+export function summarizeUsageMetrics(rows: readonly UsageMetricRow[]) {
+  const metrics = Object.fromEntries(rows.map((row) => [row.metric, Number(row.value ?? 0)]));
+  return {
+    metrics,
+    totalCostMicros: metrics['ai.cost_micros'] ?? 0,
+    requests: metrics['ai.requests'] ?? 0,
+    inputTokens: metrics['ai.input_tokens'] ?? 0,
+    outputTokens: metrics['ai.output_tokens'] ?? 0,
+    embeddingTokens: metrics['ai.embedding_tokens'] ?? 0,
+  };
 }
 
 function boundedFilter(value: string | null | undefined) {
@@ -119,7 +136,7 @@ export async function getOrganizationUsageOverview(organizationId: string, now =
       .orderBy(modelId, usageEvent.metric),
   ]);
 
-  const metrics = Object.fromEntries(metricRows.map((row) => [row.metric, Number(row.value ?? 0)]));
+  const summary = summarizeUsageMetrics(metricRows);
   const daily = dailyRows.map((row) => ({ day: row.day, metric: row.metric, value: Number(row.value ?? 0) }));
   const byModel = modelRows.map((row) => ({
     modelId: row.modelId,
@@ -129,13 +146,8 @@ export async function getOrganizationUsageOverview(organizationId: string, now =
 
   return {
     monthStart,
-    metrics,
+    ...summary,
     daily,
     byModel,
-    totalCostMicros: metrics['ai.cost_micros'] ?? 0,
-    requests: metrics['ai.requests'] ?? 0,
-    inputTokens: metrics['ai.input_tokens'] ?? 0,
-    outputTokens: metrics['ai.output_tokens'] ?? 0,
-    embeddingTokens: metrics['ai.embedding_tokens'] ?? 0,
   };
 }

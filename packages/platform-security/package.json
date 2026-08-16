@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./constants": "./src/constants.ts"
+  },
   "scripts": {
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc --noEmit",

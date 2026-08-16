@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FILE_INGEST_QUEUE, FileIngestJobSchema } from './index';
+import {
+  FILE_INGEST_QUEUE,
+  FileIngestJobSchema,
+  OUTBOUND_WEBHOOK_DELIVERY_QUEUE,
+  OutboundWebhookDeliveryJobSchema,
+} from './index';
 
 describe('file ingestion job contract', () => {
   it('keeps the payload tenant-scoped and free of storage credentials/keys', () => {
@@ -23,5 +28,23 @@ describe('file ingestion job contract', () => {
         objectKey: 'org/another-tenant/private.pdf',
       }),
     ).toEqual({ organizationId: 'org-a', fileId: 'file-a' });
+  });
+});
+
+describe('outbound webhook delivery job contract', () => {
+  it('contains only the durable delivery id', () => {
+    expect(
+      OutboundWebhookDeliveryJobSchema.parse({
+        deliveryId: 'delivery-a',
+        organizationId: 'org-a',
+        url: 'https://example.com/hook',
+        signingSecret: 'never-put-secrets-in-jobs',
+      }),
+    ).toEqual({ deliveryId: 'delivery-a' });
+    expect(OUTBOUND_WEBHOOK_DELIVERY_QUEUE).toBe('outbound.webhook.deliver');
+  });
+
+  it('rejects empty delivery ids', () => {
+    expect(() => OutboundWebhookDeliveryJobSchema.parse({ deliveryId: '' })).toThrow();
   });
 });

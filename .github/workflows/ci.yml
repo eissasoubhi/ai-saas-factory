@@ -1,13 +1,12 @@
 name: CI
 
-# Retry bootstrap after self-hosted runner restart.
 on:
   push:
     branches: [main]
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -15,36 +14,19 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, ARM64]
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_saas_factory_test
       BETTER_AUTH_SECRET: ci-only-secret-ci-only-secret-1234
       BETTER_AUTH_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Checkout PR head for lockfile bootstrap
-        if: github.event_name == 'pull_request'
-        run: git checkout "${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: corepack enable
       - run: corepack prepare pnpm@10.33.0 --activate
-      - run: pnpm install --no-frozen-lockfile
-      - name: Commit synchronized lockfile
-        if: github.event_name == 'pull_request'
-        run: |
-          if git diff --quiet -- pnpm-lock.yaml; then
-            echo "pnpm-lock.yaml is already synchronized"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add pnpm-lock.yaml
-            git commit -m "chore: sync observability lockfile"
-            git push origin "HEAD:${{ github.head_ref }}"
-          fi
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @factory/db exec drizzle-kit check
       - run: pnpm lint
       - run: pnpm typecheck

@@ -118,14 +118,27 @@
 
 ## V0.4C2 — platform APIs and customer webhooks
 
-- [ ] organization API keys
-- [ ] API key hashing, scopes, rotation and revocation
-- [ ] outbound customer webhook endpoints
-- [ ] signed webhook deliveries
-- [ ] durable delivery retries and dead-letter handling
-- [ ] delivery log UI
-- [ ] API/webhook tenant-isolation tests
-- [ ] usage credits and overage model
+- [x] organization API keys with one-time raw-secret reveal
+- [x] API key hashing, explicit scopes, expiry, rotation and revocation
+- [x] server-side Bearer authentication deriving tenant context from the key record
+- [x] scoped `/api/v1/files` example
+- [x] outbound customer webhook endpoints and event subscriptions
+- [x] encrypted-at-rest webhook signing secrets with one-time reveal/rotation
+- [x] HMAC-SHA256 signed webhook deliveries with timestamp and stable event id
+- [x] public-HTTPS SSRF boundary with DNS validation/pinning and no redirects
+- [x] durable pg-boss delivery retries and dead-letter handling
+- [x] bounded organization-scoped delivery log UI
+- [x] AI generation, file ingestion and subscription lifecycle events
+- [x] API-key crypto, signature, SSRF, queue-contract and pagination unit tests
+- [ ] API/webhook tenant-isolation integration smoke test
+- [ ] live public HTTPS webhook receiver smoke test
+
+## V0.4D — usage credits and overages
+
+- [ ] usage credit ledger and overage model
+- [ ] plan-specific overage policy
+- [ ] billing reconciliation and customer-facing usage balance
+- [ ] Stripe metered-billing integration example
 
 ## V0.5 — mobile
 

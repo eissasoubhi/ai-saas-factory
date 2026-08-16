@@ -1,9 +1,16 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
-import { getOrganizationSeatUsage, getSubscriptionForOrganization, paidPlanForSubscription, database, schema } from '@factory/db';
+import {
+  database,
+  getOrganizationSeatUsage,
+  getSubscriptionForOrganization,
+  paidPlanForSubscription,
+  schema,
+} from '@factory/db';
 import { entitlement } from '@factory/entitlements';
 import { APIError } from 'better-auth/api';
 import { betterAuth } from 'better-auth/minimal';
 import { organization } from 'better-auth/plugins';
+import { recordAuditEvent } from './audit';
 import { sendTransactionalEmail } from './email';
 
 const baseURL = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
@@ -80,6 +87,74 @@ export const auth = betterAuth({
         },
         async beforeAddMember({ organization: targetOrganization }) {
           await enforceMemberSeatLimit(targetOrganization.id);
+        },
+        async afterCreateOrganization({ organization: createdOrganization, user }) {
+          await recordAuditEvent({
+            organizationId: createdOrganization.id,
+            actorUserId: user.id,
+            action: 'organization.created',
+            entityType: 'organization',
+            entityId: createdOrganization.id,
+            metadata: { name: createdOrganization.name, slug: createdOrganization.slug },
+          });
+        },
+        async afterUpdateOrganization({ organization: updatedOrganization, user }) {
+          if (!updatedOrganization) return;
+          await recordAuditEvent({
+            organizationId: updatedOrganization.id,
+            actorUserId: user.id,
+            action: 'organization.updated',
+            entityType: 'organization',
+            entityId: updatedOrganization.id,
+            metadata: { name: updatedOrganization.name, slug: updatedOrganization.slug },
+          });
+        },
+        async afterCreateInvitation({ invitation, organization: targetOrganization }) {
+          await recordAuditEvent({
+            organizationId: targetOrganization.id,
+            actorUserId: invitation.inviterId,
+            action: 'member.invited',
+            entityType: 'invitation',
+            entityId: invitation.id,
+            metadata: { role: invitation.role },
+          });
+        },
+        async afterAcceptInvitation({ invitation, member, user, organization: targetOrganization }) {
+          await recordAuditEvent({
+            organizationId: targetOrganization.id,
+            actorUserId: user.id,
+            action: 'invitation.accepted',
+            entityType: 'member',
+            entityId: member.id,
+            metadata: { invitationId: invitation.id, role: member.role, memberUserId: member.userId },
+          });
+        },
+        async afterAddMember({ member, organization: targetOrganization }) {
+          await recordAuditEvent({
+            organizationId: targetOrganization.id,
+            action: 'member.added',
+            entityType: 'member',
+            entityId: member.id,
+            metadata: { memberUserId: member.userId, role: member.role },
+          });
+        },
+        async afterRemoveMember({ member, organization: targetOrganization }) {
+          await recordAuditEvent({
+            organizationId: targetOrganization.id,
+            action: 'member.removed',
+            entityType: 'member',
+            entityId: member.id,
+            metadata: { memberUserId: member.userId, role: member.role },
+          });
+        },
+        async afterUpdateMemberRole({ member, previousRole, organization: targetOrganization }) {
+          await recordAuditEvent({
+            organizationId: targetOrganization.id,
+            action: 'member.role_updated',
+            entityType: 'member',
+            entityId: member.id,
+            metadata: { memberUserId: member.userId, previousRole, role: member.role },
+          });
         },
       },
       async sendInvitationEmail(data) {

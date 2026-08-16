@@ -1,5 +1,7 @@
 import { ensureStripeCustomer, getSubscriptionForOrganization } from '@factory/db';
+import { correlationIdFromHeaders, emitTelemetry } from '@factory/telemetry';
 import { NextResponse } from 'next/server';
+import { recordAuditEvent } from '@/lib/audit';
 import { requireBillingManager } from '@/lib/organization-access';
 import { createStripeCheckout, createStripeCustomer } from '@/lib/stripe';
 
@@ -12,6 +14,8 @@ function hasManageableExistingSubscription(status: string) {
 }
 
 export async function POST(request: Request) {
+  const correlationId = correlationIdFromHeaders(request.headers);
+  const startedAt = Date.now();
   const access = await requireBillingManager(request.headers);
   if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
 
@@ -49,6 +53,25 @@ export async function POST(request: Request) {
   if (!checkout.url) {
     return Response.json({ error: 'Stripe did not return a Checkout URL.' }, { status: 502 });
   }
+
+  await recordAuditEvent({
+    organizationId: organization.id,
+    actorUserId: session.user.id,
+    action: 'billing.checkout_started',
+    entityType: 'subscription',
+    entityId: snapshot?.id ?? null,
+    metadata: { plan: rawPlan, provider: 'stripe' },
+    correlationId,
+  });
+  emitTelemetry({
+    name: 'web.billing.checkout_started',
+    component: 'web',
+    correlationId,
+    durationMs: Date.now() - startedAt,
+    organizationId: organization.id,
+    userId: session.user.id,
+    attributes: { plan: rawPlan, provider: 'stripe' },
+  });
 
   return NextResponse.redirect(checkout.url, 303);
 }

@@ -13,9 +13,11 @@ import {
 } from '@factory/db';
 import { embedQuery } from '@factory/embeddings';
 import { entitlement } from '@factory/entitlements';
+import { correlationIdFromHeaders, emitTelemetry } from '@factory/telemetry';
 import { streamText, type ModelMessage } from 'ai';
 import { estimateAiCostMicros, parseModelPricingJson } from '@/lib/ai-pricing';
 import { resolveAiModel } from '@/lib/ai-models';
+import { recordAuditEvent } from '@/lib/audit';
 import { auth } from '@/lib/auth';
 import {
   buildRagSystemContext,
@@ -48,6 +50,8 @@ function toModelMessages(messages: Awaited<ReturnType<typeof listConversationMes
 }
 
 export async function POST(request: Request) {
+  const correlationId = correlationIdFromHeaders(request.headers);
+  const requestStartedAt = Date.now();
   const session = await auth.api.getSession({ headers: request.headers });
   const organizationId = session?.session.activeOrganizationId;
   if (!session || !organizationId) {
@@ -107,6 +111,22 @@ export async function POST(request: Request) {
     metadata: { plan, modelId: resolvedModel.modelId, useKnowledge: body?.useKnowledge === true },
   });
   if (!quota.allowed) {
+    emitTelemetry({
+      name: 'web.ai.quota_rejected',
+      level: 'warn',
+      component: 'web',
+      correlationId,
+      durationMs: Date.now() - requestStartedAt,
+      organizationId,
+      userId: session.user.id,
+      attributes: {
+        reason: quota.reason,
+        plan,
+        modelId: resolvedModel.modelId,
+        monthlyUsed: quota.monthlyUsed,
+        minuteUsed: quota.minuteUsed,
+      },
+    });
     const error = quota.reason === 'monthly_limit'
       ? `Monthly AI request limit reached for the ${plan} plan.`
       : 'Too many AI requests. Try again in a moment.';
@@ -138,6 +158,17 @@ export async function POST(request: Request) {
         });
       }
     } catch (error) {
+      emitTelemetry({
+        name: 'web.ai.retrieval_failed',
+        level: 'error',
+        component: 'web',
+        correlationId,
+        durationMs: Date.now() - requestStartedAt,
+        organizationId,
+        userId: session.user.id,
+        attributes: { modelId: resolvedModel.modelId, useKnowledge: true },
+        error,
+      });
       return Response.json(
         { error: error instanceof Error ? error.message : 'Knowledge retrieval is unavailable.' },
         { status: 503 },
@@ -163,7 +194,7 @@ export async function POST(request: Request) {
   });
   const persistedMessages = await listConversationMessages(organizationId, existingConversation.id);
   assertOrganizationScope(organizationId, persistedMessages);
-  const startedAt = Date.now();
+  const generationStartedAt = Date.now();
   const system =
     'You are a concise, helpful assistant inside a B2B SaaS application.' +
     buildRagSystemContext(retrievedChunks);
@@ -192,6 +223,7 @@ export async function POST(request: Request) {
         outputTokens,
         pricing,
       });
+      const durationMs = Date.now() - generationStartedAt;
       const generation = await recordAiGeneration({
         organizationId,
         conversationId: existingConversation.id,
@@ -204,7 +236,7 @@ export async function POST(request: Request) {
         outputTokens,
         totalTokens,
         estimatedCostMicros,
-        durationMs: Date.now() - startedAt,
+        durationMs,
       });
 
       const usageWrites: Promise<unknown>[] = [];
@@ -239,12 +271,76 @@ export async function POST(request: Request) {
         }));
       }
       await Promise.all(usageWrites);
+      await recordAuditEvent({
+        organizationId,
+        actorUserId: session.user.id,
+        action: 'ai.generation.completed',
+        entityType: 'ai_generation',
+        entityId: generation.id,
+        correlationId,
+        metadata: {
+          conversationId: existingConversation.id,
+          provider: resolvedModel.provider,
+          modelId: resolvedModel.modelId,
+          finishReason,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          estimatedCostMicros,
+          durationMs,
+          useKnowledge: body?.useKnowledge === true,
+          retrievedChunks: retrievedChunks.length,
+        },
+      });
+      emitTelemetry({
+        name: 'web.ai.generation_completed',
+        component: 'web',
+        correlationId,
+        durationMs,
+        organizationId,
+        userId: session.user.id,
+        attributes: {
+          requestId,
+          generationId: generation.id,
+          conversationId: existingConversation.id,
+          provider: resolvedModel.provider,
+          modelId: resolvedModel.modelId,
+          finishReason,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          estimatedCostMicros,
+          useKnowledge: body?.useKnowledge === true,
+          retrievedChunks: retrievedChunks.length,
+        },
+      });
     },
   });
 
-  void result.consumeStream({ onError: (error) => console.error('AI stream consumption failed', error) });
+  void result.consumeStream({
+    onError: (error) => {
+      emitTelemetry({
+        name: 'web.ai.stream_failed',
+        level: 'error',
+        component: 'web',
+        correlationId,
+        durationMs: Date.now() - requestStartedAt,
+        organizationId,
+        userId: session.user.id,
+        attributes: {
+          requestId,
+          conversationId: existingConversation.id,
+          provider: resolvedModel.provider,
+          modelId: resolvedModel.modelId,
+          useKnowledge: body?.useKnowledge === true,
+        },
+        error,
+      });
+    },
+  });
   return result.toTextStreamResponse({
     headers: {
+      'X-Request-Id': correlationId,
       'X-Conversation-Id': existingConversation.id,
       'X-AI-Model-Id': resolvedModel.modelId,
       'X-RAG-Sources': encodeRagSourcesHeader(ragSources(retrievedChunks)),

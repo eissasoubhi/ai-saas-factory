@@ -26,4 +26,5 @@ export * from './ai';
 export * from './ai-policy';
 export * from './billing';
 export * from './files';
+export * from './observability';
 export * from './rag';

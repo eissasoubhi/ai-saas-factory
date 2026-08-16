@@ -1,6 +1,6 @@
 # AI SaaS Factory
 
-A commercial, AI-native B2B SaaS starter for teams that want to ship production web and mobile products without rebuilding authentication, organizations, billing, entitlements, persisted AI conversations, private files, durable jobs, tenant-isolated RAG, metering, audit logs, and deployment foundations.
+A commercial, AI-native B2B SaaS starter for teams that want to ship production web and mobile products without rebuilding authentication, organizations, billing, entitlements, persisted AI conversations, private files, durable jobs, tenant-isolated RAG, metering, audit logs, observability, and deployment foundations.
 
 ## Product direction
 
@@ -19,6 +19,7 @@ A commercial, AI-native B2B SaaS starter for teams that want to ship production 
 - S3-compatible private storage via AWS SDK v3
 - pg-boss durable PostgreSQL jobs
 - `unpdf` server-side PDF extraction
+- vendor-neutral structured JSON telemetry with aggressive redaction
 - Expo SDK 57 / React Native 0.86
 - Turborepo + pnpm
 - Docker for local pgvector PostgreSQL, Redis and Mailpit
@@ -31,11 +32,12 @@ apps/
   worker/      durable ingestion/background worker
   mobile/      Expo mobile shell (V1.5)
 packages/
-  db/          schema, migrations, billing, AI, files, vectors and usage persistence
+  db/          schema, migrations, billing, AI, files, vectors, audit and usage persistence
   documents/   extraction limits + deterministic document chunking
   embeddings/  embedding-model runtime boundary
   storage/     S3-compatible object storage + presigned URL policy
   jobs/        PostgreSQL queue contracts and producer/worker setup
+  telemetry/   structured events, correlation IDs and recursive redaction
   contracts/   shared runtime schemas and API contracts
   entitlements/ plan and feature policy
   typescript-config/ shared TypeScript configuration
@@ -71,7 +73,9 @@ V0.4B1 adds private S3-compatible files, direct presigned browser uploads, post-
 
 V0.4B2 adds the end-to-end knowledge pipeline: PDF/text extraction, deterministic chunking, batched embeddings, pgvector persistence, retry-safe re-indexing, exact tenant-scoped cosine retrieval, a **Use workspace knowledge** chat mode, source markers and prompt-injection boundaries for retrieved documents.
 
-The project is still pre-launch: OAuth examples, browser E2E coverage, real Stripe/provider/storage/RAG smoke tests, storage/retrieval quotas, mobile billing and commercial packaging remain on the roadmap.
+V0.4C1 adds a tenant-scoped audit viewer, AI usage/configured-cost dashboard, high-value organization/billing/file/AI audit events, structured web/worker telemetry, request correlation IDs and recursive redaction of credentials, prompts, document content and signed URLs.
+
+The project is still pre-launch: OAuth examples, browser E2E coverage, real Stripe/provider/storage/RAG smoke tests, storage/retrieval quotas, organization API keys, outbound customer webhooks, mobile billing and commercial packaging remain on the roadmap.
 
 See:
 
@@ -82,6 +86,7 @@ See:
 - `docs/ai-runtime.md`
 - `docs/storage-jobs.md`
 - `docs/rag.md`
+- `docs/observability.md`
 
 ## Commercial intent
 

@@ -21,6 +21,7 @@ import {
   validateStoredObject,
 } from '@factory/storage';
 import { emitTelemetry } from '@factory/telemetry';
+import { publishWorkerOutboundEvent } from './outbound-events';
 import { processOutboundWebhookDeadLetter, processOutboundWebhookDelivery } from './webhook-delivery';
 
 async function processFileJob(data: unknown) {
@@ -112,6 +113,35 @@ async function processFileJob(data: unknown) {
   }
 }
 
+async function publishFileLifecycleEvent(input: {
+  organizationId: string;
+  fileId: string;
+  status: 'ready' | 'failed';
+  correlationId: string;
+  eventId: string;
+  data?: Record<string, unknown>;
+}) {
+  try {
+    await publishWorkerOutboundEvent({
+      organizationId: input.organizationId,
+      eventId: input.eventId,
+      eventType: input.status === 'ready' ? 'file.ready' : 'file.failed',
+      correlationId: input.correlationId,
+      data: { fileId: input.fileId, status: input.status, ...(input.data ?? {}) },
+    });
+  } catch (error) {
+    emitTelemetry({
+      name: 'worker.outbound_webhook.publish_failed',
+      level: 'error',
+      component: 'worker',
+      correlationId: input.correlationId,
+      organizationId: input.organizationId,
+      attributes: { fileId: input.fileId, eventId: input.eventId, status: input.status },
+      error,
+    });
+  }
+}
+
 async function main() {
   const boss = await createWorkerBoss();
   const fileWorkerId = await boss.work(FILE_INGEST_QUEUE, async (jobs) => {
@@ -120,6 +150,25 @@ async function main() {
       const correlationId = String(job.id);
       try {
         const result = await processFileJob(job.data);
+        if (result.status === 'ready') {
+          await publishFileLifecycleEvent({
+            organizationId: result.organizationId,
+            fileId: result.fileId,
+            status: 'ready',
+            correlationId,
+            eventId: `evt_file_ready_${String(job.id)}`,
+            data: { chunkCount: result.chunkCount, embeddingModelId: result.embeddingModelId },
+          });
+        } else if (result.status === 'rejected') {
+          await publishFileLifecycleEvent({
+            organizationId: result.organizationId,
+            fileId: result.fileId,
+            status: 'failed',
+            correlationId,
+            eventId: `evt_file_failed_${String(job.id)}`,
+            data: { reason: 'validation_rejected' },
+          });
+        }
         emitTelemetry({
           name: 'worker.file_ingest.completed',
           component: 'worker',
@@ -136,6 +185,15 @@ async function main() {
         });
       } catch (error) {
         const parsed = FileIngestJobSchema.safeParse(job.data);
+        if (parsed.success) {
+          await publishFileLifecycleEvent({
+            organizationId: parsed.data.organizationId,
+            fileId: parsed.data.fileId,
+            status: 'failed',
+            correlationId,
+            eventId: `evt_file_failed_${String(job.id)}`,
+          });
+        }
         emitTelemetry({
           name: 'worker.file_ingest.failed',
           level: 'error',

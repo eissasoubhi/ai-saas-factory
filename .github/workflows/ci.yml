@@ -1,5 +1,6 @@
 name: CI
 
+# Retry bootstrap after self-hosted runner restart.
 on:
   push:
     branches: [main]

@@ -1,9 +1,9 @@
 'use client';
 
-import { API_KEY_SCOPES } from '@factory/platform-security';
+import { API_KEY_SCOPES } from '@factory/platform-security/constants';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { OUTBOUND_WEBHOOK_EVENT_TYPES } from '@/lib/outbound-events';
+import { OUTBOUND_WEBHOOK_EVENT_TYPES } from '@/lib/outbound-event-types';
 
 type ApiKeyRow = {
   id: string;
@@ -41,11 +41,19 @@ type DeliveryRow = {
   createdAt: string;
 };
 
-async function requestJson(url: string, init?: RequestInit) {
+type JsonObject = Record<string, unknown>;
+
+function responseError(body: unknown, fallback: string) {
+  if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') return body.error;
+  return fallback;
+}
+
+async function requestJson<T extends JsonObject = JsonObject>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
-  const body = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) throw new Error(body?.error ?? `Request failed with HTTP ${response.status}`);
-  return body;
+  const body: unknown = response.status === 204 ? {} : await response.json().catch(() => null);
+  if (!response.ok) throw new Error(responseError(body, `Request failed with HTTP ${response.status}`));
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {} as T;
+  return body as T;
 }
 
 export function PlatformSettingsClient({
@@ -100,7 +108,7 @@ export function PlatformSettingsClient({
             void run(async () => {
               const data = new FormData(form);
               const expires = String(data.get('expiresInDays') ?? '');
-              const result = await requestJson('/api/platform/api-keys', {
+              const result = await requestJson<{ secret: string }>('/api/platform/api-keys', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({
@@ -131,7 +139,7 @@ export function PlatformSettingsClient({
               </label>
             ))}
           </div>
-          <button disabled={busy} className="w-fit rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">Create API key</button>
+          <button type="submit" disabled={busy} className="w-fit rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">Create API key</button>
         </form>
 
         <div className="mt-6 divide-y divide-zinc-800">
@@ -154,7 +162,7 @@ export function PlatformSettingsClient({
                     className="rounded-lg border border-zinc-700 px-3 py-2 text-sm"
                     type="button"
                     onClick={() => void run(async () => {
-                      const result = await requestJson(`/api/platform/api-keys/${key.id}/rotate`, { method: 'POST' });
+                      const result = await requestJson<{ secret: string }>(`/api/platform/api-keys/${key.id}/rotate`, { method: 'POST' });
                       setApiSecret(result.secret);
                       router.refresh();
                     })}
@@ -194,7 +202,7 @@ export function PlatformSettingsClient({
             const form = event.currentTarget;
             void run(async () => {
               const data = new FormData(form);
-              const result = await requestJson('/api/platform/webhooks', {
+              const result = await requestJson<{ signingSecret: string }>('/api/platform/webhooks', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({
@@ -221,7 +229,7 @@ export function PlatformSettingsClient({
               </label>
             ))}
           </div>
-          <button disabled={busy} className="w-fit rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">Create webhook</button>
+          <button type="submit" disabled={busy} className="w-fit rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">Create webhook</button>
         </form>
 
         <div className="mt-6 divide-y divide-zinc-800">
@@ -236,7 +244,7 @@ export function PlatformSettingsClient({
               </div>
               <div className="flex flex-wrap items-start gap-2">
                 <button disabled={busy || endpoint.status !== 'active'} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm disabled:opacity-40" type="button" onClick={() => void run(async () => { await requestJson(`/api/platform/webhooks/${endpoint.id}/test`, { method: 'POST' }); setNotice('Test delivery queued.'); router.refresh(); })}>Test</button>
-                <button disabled={busy} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" type="button" onClick={() => void run(async () => { const result = await requestJson(`/api/platform/webhooks/${endpoint.id}/rotate-secret`, { method: 'POST' }); setWebhookSecret(result.signingSecret); router.refresh(); })}>Rotate secret</button>
+                <button disabled={busy} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" type="button" onClick={() => void run(async () => { const result = await requestJson<{ signingSecret: string }>(`/api/platform/webhooks/${endpoint.id}/rotate-secret`, { method: 'POST' }); setWebhookSecret(result.signingSecret); router.refresh(); })}>Rotate secret</button>
                 <button disabled={busy} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" type="button" onClick={() => void run(async () => { await requestJson(`/api/platform/webhooks/${endpoint.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: endpoint.status === 'active' ? 'disabled' : 'active' }) }); router.refresh(); })}>{endpoint.status === 'active' ? 'Disable' : 'Enable'}</button>
                 <button disabled={busy} className="rounded-lg border border-red-900 px-3 py-2 text-sm text-red-300" type="button" onClick={() => void run(async () => { if (!window.confirm(`Delete ${endpoint.name}?`)) return; await requestJson(`/api/platform/webhooks/${endpoint.id}`, { method: 'DELETE' }); router.refresh(); })}>Delete</button>
               </div>

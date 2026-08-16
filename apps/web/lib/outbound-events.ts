@@ -2,16 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createWebhookDeliveriesForEvent } from '@factory/db';
 import { enqueueOutboundWebhookDelivery } from '@factory/jobs';
 import { emitTelemetry, sanitizeTelemetryAttributes } from '@factory/telemetry';
-
-export const OUTBOUND_WEBHOOK_EVENT_TYPES = [
-  'webhook.test',
-  'ai.generation.completed',
-  'file.ready',
-  'file.failed',
-  'billing.subscription.updated',
-] as const;
-
-export type OutboundWebhookEventType = (typeof OUTBOUND_WEBHOOK_EVENT_TYPES)[number];
+import type { OutboundWebhookEventType } from './outbound-event-types';
 
 export async function publishOutboundWebhookEvent(input: {
   organizationId: string;

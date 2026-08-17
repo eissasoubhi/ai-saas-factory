@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -22,32 +22,12 @@ jobs:
       BETTER_AUTH_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Checkout PR head for C2 bootstrap
-        if: github.event_name == 'pull_request'
-        run: git checkout "${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: corepack enable
       - run: corepack prepare pnpm@10.33.0 --activate
-      - run: pnpm install --no-frozen-lockfile
-      - name: Generate C2 Drizzle migration
-        if: github.event_name == 'pull_request'
-        run: pnpm --filter @factory/db db:generate
-      - name: Commit generated C2 artifacts
-        if: github.event_name == 'pull_request'
-        run: |
-          git add pnpm-lock.yaml packages/db/drizzle
-          if git diff --cached --quiet; then
-            echo "Lockfile and Drizzle artifacts are already synchronized"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "chore: generate C2 platform artifacts"
-            git push origin "HEAD:${{ github.head_ref }}"
-          fi
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @factory/db exec drizzle-kit check
       - run: pnpm lint
       - run: pnpm typecheck

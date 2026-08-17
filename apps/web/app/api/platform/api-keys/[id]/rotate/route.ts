@@ -14,6 +14,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const current = await getApiKeyForOrganization(access.context.organization.id, id);
   if (!current || current.revokedAt) return Response.json({ error: 'API key not found or already revoked.' }, { status: 404 });
+  if (current.expiresAt && current.expiresAt.getTime() <= Date.now()) {
+    return Response.json({ error: 'Expired API keys cannot be rotated. Create a new key instead.' }, { status: 409 });
+  }
 
   const body = await request.json().catch(() => null);
   const parsed = body == null ? null : ApiKeyCreateSchema.safeParse(body);

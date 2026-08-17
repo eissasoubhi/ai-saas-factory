@@ -58,6 +58,8 @@ describe('webhook SSRF policy', () => {
     expect(isPublicIpAddress('::1')).toBe(false);
     expect(isPublicIpAddress('fd00::1')).toBe(false);
     expect(isPublicIpAddress('2001:db8::1')).toBe(false);
+    expect(isPublicIpAddress('::ffff:127.0.0.1')).toBe(false);
+    expect(isPublicIpAddress('::ffff:7f00:1')).toBe(false);
     expect(isPublicIpAddress('8.8.8.8')).toBe(true);
     expect(isPublicIpAddress('2606:4700:4700::1111')).toBe(true);
   });
@@ -75,5 +77,6 @@ describe('webhook SSRF policy', () => {
         { address: '10.0.0.7', family: 4 },
       ]),
     ).rejects.toThrow('non-public');
+    await expect(resolvePublicWebhookTarget('https://[::ffff:127.0.0.1]/test')).rejects.toThrow('non-public');
   });
 });

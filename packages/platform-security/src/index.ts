@@ -173,6 +173,20 @@ function isPrivateIpv4(address: string) {
   );
 }
 
+function mappedIpv4Address(address: string) {
+  const normalized = address.toLowerCase();
+  if (!normalized.startsWith('::ffff:')) return null;
+  const tail = normalized.slice('::ffff:'.length);
+  if (isIP(tail) === 4) return tail;
+
+  const groups = tail.split(':');
+  if (groups.length !== 2 || groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return null;
+  const high = Number.parseInt(groups[0] ?? '', 16);
+  const low = Number.parseInt(groups[1] ?? '', 16);
+  if (!Number.isFinite(high) || !Number.isFinite(low)) return null;
+  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+}
+
 function isPrivateIpv6(address: string) {
   const normalized = address.toLowerCase();
   if (normalized === '::' || normalized === '::1') return true;
@@ -180,7 +194,7 @@ function isPrivateIpv6(address: string) {
   if (/^fe[89ab]/.test(normalized)) return true;
   if (normalized.startsWith('ff')) return true;
   if (normalized.startsWith('2001:db8:') || normalized === '2001:db8::') return true;
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized)?.[1];
+  const mapped = mappedIpv4Address(normalized);
   return mapped ? isPrivateIpv4(mapped) : false;
 }
 

@@ -79,20 +79,22 @@ async function applySubscription(subscription: StripeSubscription, event: Stripe
       entityId: subscription.id,
       metadata: { eventId: event.id, eventType: event.type, status: subscription.status, plan },
     });
-    void publishOutboundWebhookEvent({
-      organizationId,
-      type: 'billing.subscription.updated',
-      eventId: `evt_billing_${event.id}`,
-      occurredAt: new Date(event.created * 1000),
-      correlationId: event.id,
-      data: {
-        subscriptionId: subscription.id,
-        plan,
-        status: subscription.status,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        currentPeriodEnd: currentPeriodEnd?.toISOString() ?? null,
-      },
-    }).catch((error) => {
+    try {
+      await publishOutboundWebhookEvent({
+        organizationId,
+        type: 'billing.subscription.updated',
+        eventId: `evt_billing_${event.id}`,
+        occurredAt: new Date(event.created * 1000),
+        correlationId: event.id,
+        data: {
+          subscriptionId: subscription.id,
+          plan,
+          status: subscription.status,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          currentPeriodEnd: currentPeriodEnd?.toISOString() ?? null,
+        },
+      });
+    } catch (error) {
       emitTelemetry({
         name: 'web.outbound_webhook.publish_failed',
         level: 'error',
@@ -102,7 +104,7 @@ async function applySubscription(subscription: StripeSubscription, event: Stripe
         attributes: { eventId: `evt_billing_${event.id}`, eventType: 'billing.subscription.updated' },
         error,
       });
-    });
+    }
   }
 }
 

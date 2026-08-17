@@ -10,17 +10,9 @@ import {
 } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
+import { API_KEY_SCOPES, type ApiKeyScope } from './constants';
 
-export const API_KEY_SCOPES = [
-  'ai:read',
-  'ai:write',
-  'files:read',
-  'files:write',
-  'webhooks:read',
-  'webhooks:write',
-] as const;
-
-export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+export { API_KEY_SCOPES, type ApiKeyScope } from './constants';
 
 export type GeneratedApiKey = {
   id: string;
@@ -194,8 +186,11 @@ function isPrivateIpv6(address: string) {
   if (/^fe[89ab]/.test(normalized)) return true;
   if (normalized.startsWith('ff')) return true;
   if (normalized.startsWith('2001:db8:') || normalized === '2001:db8::') return true;
-  const mapped = mappedIpv4Address(normalized);
-  return mapped ? isPrivateIpv4(mapped) : false;
+  if (normalized.startsWith('::ffff:')) {
+    const mapped = mappedIpv4Address(normalized);
+    return !mapped || isPrivateIpv4(mapped);
+  }
+  return false;
 }
 
 export function isPublicIpAddress(address: string) {
@@ -265,8 +260,19 @@ export async function postSignedWebhook(input: {
   if (!pinned) throw new Error('Webhook hostname did not resolve');
   const timestamp = Math.floor(Date.now() / 1000);
   const signature = signWebhookPayload(input.secret, { timestamp, eventId: input.eventId, body: input.body });
+  const timeoutMs = input.timeoutMs ?? 10_000;
 
   return await new Promise<WebhookHttpResult>((resolve, reject) => {
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    const finish = (result: { value?: WebhookHttpResult; error?: Error }) => {
+      if (settled) return;
+      settled = true;
+      if (deadline) clearTimeout(deadline);
+      if (result.error) reject(result.error);
+      else if (result.value) resolve(result.value);
+    };
+
     const request = httpsRequest(
       {
         protocol: 'https:',
@@ -292,13 +298,15 @@ export async function postSignedWebhook(input: {
         response.on('data', (chunk: string) => {
           if (preview.length < 4096) preview += chunk.slice(0, 4096 - preview.length);
         });
+        response.on('error', (error) => finish({ error }));
         response.on('end', () => {
-          resolve({ status: response.statusCode ?? 0, bodyPreview: preview });
+          finish({ value: { status: response.statusCode ?? 0, bodyPreview: preview } });
         });
       },
     );
-    request.setTimeout(input.timeoutMs ?? 10_000, () => request.destroy(new Error('Webhook request timed out')));
-    request.on('error', reject);
+    deadline = setTimeout(() => request.destroy(new Error('Webhook request timed out')), timeoutMs);
+    request.setTimeout(timeoutMs, () => request.destroy(new Error('Webhook request timed out')));
+    request.on('error', (error) => finish({ error }));
     request.end(input.body);
   });
 }

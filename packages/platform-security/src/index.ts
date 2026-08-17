@@ -263,12 +263,11 @@ export async function postSignedWebhook(input: {
   const timeoutMs = input.timeoutMs ?? 10_000;
 
   return await new Promise<WebhookHttpResult>((resolve, reject) => {
-    let deadline: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
     const finish = (result: { value?: WebhookHttpResult; error?: Error }) => {
       if (settled) return;
       settled = true;
-      if (deadline) clearTimeout(deadline);
+      clearTimeout(deadline);
       if (result.error) reject(result.error);
       else if (result.value) resolve(result.value);
     };
@@ -304,7 +303,7 @@ export async function postSignedWebhook(input: {
         });
       },
     );
-    deadline = setTimeout(() => request.destroy(new Error('Webhook request timed out')), timeoutMs);
+    const deadline = setTimeout(() => request.destroy(new Error('Webhook request timed out')), timeoutMs);
     request.setTimeout(timeoutMs, () => request.destroy(new Error('Webhook request timed out')));
     request.on('error', (error) => finish({ error }));
     request.end(input.body);

@@ -18,6 +18,7 @@
     "@factory/embeddings": "workspace:*",
     "@factory/entitlements": "workspace:*",
     "@factory/jobs": "workspace:*",
+    "@factory/platform-security": "workspace:*",
     "@factory/storage": "workspace:*",
     "@factory/telemetry": "workspace:*",
     "ai": "^6.0.0",

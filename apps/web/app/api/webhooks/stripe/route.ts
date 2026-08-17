@@ -7,6 +7,8 @@ import {
   syncStripeSubscription,
   writeAuditLog,
 } from '@factory/db';
+import { emitTelemetry } from '@factory/telemetry';
+import { publishOutboundWebhookEvent } from '@/lib/outbound-events';
 import {
   planForStripePrice,
   retrieveStripeSubscription,
@@ -56,6 +58,7 @@ async function applySubscription(subscription: StripeSubscription, event: Stripe
 
   const priceId = stripeSubscriptionPriceId(subscription);
   const plan = planForStripePrice(priceId);
+  const currentPeriodEnd = stripeSubscriptionPeriodEnd(subscription);
   const result = await syncStripeSubscription({
     organizationId,
     customerId: subscription.customer,
@@ -63,7 +66,7 @@ async function applySubscription(subscription: StripeSubscription, event: Stripe
     priceId,
     plan,
     status: subscription.status,
-    currentPeriodEnd: stripeSubscriptionPeriodEnd(subscription),
+    currentPeriodEnd,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     providerUpdatedAt: new Date(event.created * 1000),
   });
@@ -76,6 +79,32 @@ async function applySubscription(subscription: StripeSubscription, event: Stripe
       entityId: subscription.id,
       metadata: { eventId: event.id, eventType: event.type, status: subscription.status, plan },
     });
+    try {
+      await publishOutboundWebhookEvent({
+        organizationId,
+        type: 'billing.subscription.updated',
+        eventId: `evt_billing_${event.id}`,
+        occurredAt: new Date(event.created * 1000),
+        correlationId: event.id,
+        data: {
+          subscriptionId: subscription.id,
+          plan,
+          status: subscription.status,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          currentPeriodEnd: currentPeriodEnd?.toISOString() ?? null,
+        },
+      });
+    } catch (error) {
+      emitTelemetry({
+        name: 'web.outbound_webhook.publish_failed',
+        level: 'error',
+        component: 'web',
+        correlationId: event.id,
+        organizationId,
+        attributes: { eventId: `evt_billing_${event.id}`, eventType: 'billing.subscription.updated' },
+        error,
+      });
+    }
   }
 }
 

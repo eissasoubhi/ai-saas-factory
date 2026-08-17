@@ -16,6 +16,7 @@
     "@factory/documents": "workspace:*",
     "@factory/embeddings": "workspace:*",
     "@factory/jobs": "workspace:*",
+    "@factory/platform-security": "workspace:*",
     "@factory/storage": "workspace:*",
     "@factory/telemetry": "workspace:*",
     "tsx": "4.23.12"

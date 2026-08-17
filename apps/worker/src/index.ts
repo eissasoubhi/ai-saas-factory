@@ -7,7 +7,14 @@ import {
 } from '@factory/db';
 import { chunkDocumentText, documentLimits, extractDocumentText } from '@factory/documents';
 import { embedTexts } from '@factory/embeddings';
-import { createFileWorkerBoss, FILE_INGEST_QUEUE, FileIngestJobSchema } from '@factory/jobs';
+import {
+  createWorkerBoss,
+  FILE_INGEST_DLQ,
+  FILE_INGEST_QUEUE,
+  FileIngestJobSchema,
+  OUTBOUND_WEBHOOK_DELIVERY_DLQ,
+  OUTBOUND_WEBHOOK_DELIVERY_QUEUE,
+} from '@factory/jobs';
 import {
   deleteStoredObject,
   headStoredObject,
@@ -15,6 +22,8 @@ import {
   validateStoredObject,
 } from '@factory/storage';
 import { emitTelemetry } from '@factory/telemetry';
+import { publishWorkerOutboundEvent } from './outbound-events';
+import { processOutboundWebhookDeadLetter, processOutboundWebhookDelivery } from './webhook-delivery';
 
 async function processFileJob(data: unknown) {
   const payload = FileIngestJobSchema.parse(data);
@@ -105,14 +114,62 @@ async function processFileJob(data: unknown) {
   }
 }
 
+async function publishFileLifecycleEvent(input: {
+  organizationId: string;
+  fileId: string;
+  status: 'ready' | 'failed';
+  correlationId: string;
+  eventId: string;
+  data?: Record<string, unknown>;
+}) {
+  try {
+    await publishWorkerOutboundEvent({
+      organizationId: input.organizationId,
+      eventId: input.eventId,
+      eventType: input.status === 'ready' ? 'file.ready' : 'file.failed',
+      correlationId: input.correlationId,
+      data: { fileId: input.fileId, status: input.status, ...(input.data ?? {}) },
+    });
+  } catch (error) {
+    emitTelemetry({
+      name: 'worker.outbound_webhook.publish_failed',
+      level: 'error',
+      component: 'worker',
+      correlationId: input.correlationId,
+      organizationId: input.organizationId,
+      attributes: { fileId: input.fileId, eventId: input.eventId, status: input.status },
+      error,
+    });
+  }
+}
+
 async function main() {
-  const boss = await createFileWorkerBoss();
-  const workerId = await boss.work(FILE_INGEST_QUEUE, async (jobs) => {
+  const boss = await createWorkerBoss();
+  const fileWorkerId = await boss.work(FILE_INGEST_QUEUE, async (jobs) => {
     for (const job of jobs) {
       const startedAt = Date.now();
       const correlationId = String(job.id);
       try {
         const result = await processFileJob(job.data);
+        if (result.status === 'ready') {
+          await publishFileLifecycleEvent({
+            organizationId: result.organizationId,
+            fileId: result.fileId,
+            status: 'ready',
+            correlationId,
+            eventId: `evt_file_ready_${String(job.id)}`,
+            data: { chunkCount: result.chunkCount, embeddingModelId: result.embeddingModelId },
+          });
+        } else if (result.status === 'rejected') {
+          await publishFileLifecycleEvent({
+            organizationId: result.organizationId,
+            fileId: result.fileId,
+            status: 'failed',
+            correlationId,
+            eventId: `evt_file_failed_${String(job.id)}`,
+            data: { reason: 'validation_rejected' },
+          });
+        }
         emitTelemetry({
           name: 'worker.file_ingest.completed',
           component: 'worker',
@@ -144,11 +201,52 @@ async function main() {
     }
   });
 
+  const fileDeadLetterWorkerId = await boss.work(FILE_INGEST_DLQ, async (jobs) => {
+    for (const job of jobs) {
+      const parsed = FileIngestJobSchema.safeParse(job.data);
+      if (!parsed.success) continue;
+      const correlationId = String(job.id);
+      await publishFileLifecycleEvent({
+        organizationId: parsed.data.organizationId,
+        fileId: parsed.data.fileId,
+        status: 'failed',
+        correlationId,
+        eventId: `evt_file_failed_${String(job.id)}`,
+        data: { reason: 'retry_exhausted' },
+      });
+      emitTelemetry({
+        name: 'worker.file_ingest.dead',
+        level: 'error',
+        component: 'worker',
+        correlationId,
+        organizationId: parsed.data.organizationId,
+        attributes: { fileId: parsed.data.fileId },
+      });
+    }
+  });
+
+  const webhookWorkerId = await boss.work(OUTBOUND_WEBHOOK_DELIVERY_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      await processOutboundWebhookDelivery(job.data, String(job.id));
+    }
+  });
+
+  const webhookDeadLetterWorkerId = await boss.work(OUTBOUND_WEBHOOK_DELIVERY_DLQ, async (jobs) => {
+    for (const job of jobs) {
+      await processOutboundWebhookDeadLetter(job.data, String(job.id));
+    }
+  });
+
   emitTelemetry({
     name: 'worker.started',
     component: 'worker',
-    correlationId: String(workerId),
-    attributes: { queue: FILE_INGEST_QUEUE },
+    correlationId: String(fileWorkerId),
+    attributes: {
+      queues: [FILE_INGEST_QUEUE, FILE_INGEST_DLQ, OUTBOUND_WEBHOOK_DELIVERY_QUEUE, OUTBOUND_WEBHOOK_DELIVERY_DLQ],
+      fileDeadLetterWorkerId: String(fileDeadLetterWorkerId),
+      webhookWorkerId: String(webhookWorkerId),
+      webhookDeadLetterWorkerId: String(webhookDeadLetterWorkerId),
+    },
   });
 
   let stopping = false;

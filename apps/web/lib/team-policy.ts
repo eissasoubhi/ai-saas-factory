@@ -1,12 +1,13 @@
 export type WorkspaceRole = 'owner' | 'admin' | 'member';
 
 export function roleIncludes(role: string | readonly string[], expected: WorkspaceRole) {
-  const roles = Array.isArray(role)
-    ? role
-    : role
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
+  const roles =
+    typeof role === 'string'
+      ? role
+          .split(',')
+          .map((item: string) => item.trim())
+          .filter(Boolean)
+      : role;
   return roles.includes(expected);
 }
 

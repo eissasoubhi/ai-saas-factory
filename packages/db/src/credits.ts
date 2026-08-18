@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql, sum } from 'drizzle-orm';
-import { database } from './index';
 import { usageCreditLedger } from './credits-schema';
+import { database } from './index';
 
 export type UsageCreditKind = 'grant' | 'reservation' | 'settlement' | 'adjustment';
 
@@ -87,17 +87,62 @@ export async function ensureMonthlyPlanCreditGrant(input: {
   periodKey?: string;
   effectiveAt?: Date;
 }) {
-  const periodKey = input.periodKey ?? usageCreditPeriodKey(input.effectiveAt);
-  return appendUsageCreditEntry({
-    organizationId: input.organizationId,
-    periodKey,
-    kind: 'grant',
-    amountMicros: input.includedMicros,
-    source: 'plan.monthly',
-    referenceId: input.plan,
-    idempotencyKey: `credit-grant/${input.organizationId}/${periodKey}/${input.plan}`,
-    metadata: { plan: input.plan },
-    effectiveAt: input.effectiveAt,
+  if (!Number.isSafeInteger(input.includedMicros) || input.includedMicros < 0) {
+    throw new Error('Included monthly credits must be a non-negative safe integer number of micros');
+  }
+
+  const db = database();
+  const effectiveAt = input.effectiveAt ?? new Date();
+  const periodKey = input.periodKey ?? usageCreditPeriodKey(effectiveAt);
+
+  return db.transaction(async (tx) => {
+    const lockKey = `usage-credit-grant:${input.organizationId}:${periodKey}`;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+
+    const [grantRow] = await tx
+      .select({ value: sum(usageCreditLedger.amountMicros) })
+      .from(usageCreditLedger)
+      .where(
+        and(
+          eq(usageCreditLedger.organizationId, input.organizationId),
+          eq(usageCreditLedger.periodKey, periodKey),
+          eq(usageCreditLedger.kind, 'grant'),
+          eq(usageCreditLedger.source, 'plan.monthly'),
+        ),
+      );
+    const alreadyGrantedMicros = Number(grantRow?.value ?? 0);
+    const topUpMicros = Math.max(0, input.includedMicros - alreadyGrantedMicros);
+    if (topUpMicros === 0) {
+      return { grantedMicros: 0, alreadyGrantedMicros, targetMicros: input.includedMicros };
+    }
+
+    const idempotencyKey = `credit-grant/${input.organizationId}/${periodKey}/${input.includedMicros}`;
+    const [inserted] = await tx
+      .insert(usageCreditLedger)
+      .values({
+        id: randomUUID(),
+        organizationId: input.organizationId,
+        periodKey,
+        kind: 'grant',
+        amountMicros: topUpMicros,
+        source: 'plan.monthly',
+        referenceId: input.plan,
+        idempotencyKey,
+        metadata: {
+          plan: input.plan,
+          targetMicros: input.includedMicros,
+          previousGrantedMicros: alreadyGrantedMicros,
+        },
+        effectiveAt,
+      })
+      .onConflictDoNothing({ target: usageCreditLedger.idempotencyKey })
+      .returning({ amountMicros: usageCreditLedger.amountMicros });
+
+    return {
+      grantedMicros: inserted?.amountMicros ?? 0,
+      alreadyGrantedMicros,
+      targetMicros: input.includedMicros,
+    };
   });
 }
 
@@ -210,7 +255,7 @@ export async function settleUsageCreditReservation(input: {
       reservationMicros: input.reservationMicros,
       actualCostMicros: input.actualCostMicros,
     },
-    effectiveAt: input.now,
+    ...(input.now ? { effectiveAt: input.now } : {}),
   });
 }
 

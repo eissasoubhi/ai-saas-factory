@@ -1,9 +1,11 @@
 import {
   getOrganizationUsageOverview,
   getSubscriptionForOrganization,
+  getUsageCreditBalance,
   paidPlanForSubscription,
+  usageCreditPeriodKey,
 } from '@factory/db';
-import { entitlement } from '@factory/entitlements';
+import { aiCreditPolicy, entitlement } from '@factory/entitlements';
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -34,6 +36,11 @@ export default async function UsageSettingsPage() {
   ]);
   const plan = paidPlanForSubscription(snapshot);
   const requestLimit = entitlement(plan, 'ai_requests_monthly') as number;
+  const creditPolicy = aiCreditPolicy(plan);
+  const creditBalanceMicros = await getUsageCreditBalance(
+    context.organization.id,
+    usageCreditPeriodKey(),
+  );
   const modelIds = [...new Set(usage.byModel.map((row) => row.modelId))];
 
   return (
@@ -42,7 +49,7 @@ export default async function UsageSettingsPage() {
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500">{context.organization.name}</p>
           <h1 className="mt-2 text-4xl font-bold">AI usage</h1>
-          <p className="mt-3 text-zinc-400">Current-month totals calculated from immutable workspace usage events.</p>
+          <p className="mt-3 text-zinc-400">Current-month totals calculated from immutable workspace usage events and credit-ledger entries.</p>
         </div>
         <div className="flex gap-2">
           <Link className="rounded-lg border border-zinc-700 px-4 py-2 text-sm" href="/settings/audit">Audit log</Link>
@@ -50,13 +57,20 @@ export default async function UsageSettingsPage() {
         </div>
       </div>
 
-      <section className="mt-8 grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+      <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Requests" value={`${formatNumber(usage.requests)} / ${formatNumber(requestLimit)}`} />
+        <Metric label="Credit balance" value={formatUsdMicros(creditBalanceMicros)} />
+        <Metric label="Monthly allowance" value={formatUsdMicros(creditPolicy.includedMicros)} />
+        <Metric label="Overage" value={creditPolicy.overageAllowed ? 'Allowed' : 'Blocked'} />
         <Metric label="Input tokens" value={formatNumber(usage.inputTokens)} />
         <Metric label="Output tokens" value={formatNumber(usage.outputTokens)} />
         <Metric label="Embedding tokens" value={formatNumber(usage.embeddingTokens)} />
         <Metric label="Estimated model cost" value={formatUsdMicros(usage.totalCostMicros)} />
       </section>
+
+      <p className="mt-3 text-xs text-zinc-600">
+        Monthly plan credits are granted lazily on the first AI request of the period. Before first use, the ledger balance can be zero while the plan allowance is still available.
+      </p>
 
       <section className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">

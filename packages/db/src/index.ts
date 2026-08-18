@@ -3,8 +3,9 @@ import postgres from 'postgres';
 import * as baseSchema from './schema';
 import * as ragSchema from './rag-schema';
 import * as platformSchema from './platform-schema';
+import * as creditsSchema from './credits-schema';
 
-const schema = { ...baseSchema, ...ragSchema, ...platformSchema };
+const schema = { ...baseSchema, ...ragSchema, ...platformSchema, ...creditsSchema };
 
 let cached: ReturnType<typeof createDb> | undefined;
 
@@ -26,6 +27,8 @@ export { schema };
 export * from './ai';
 export * from './ai-policy';
 export * from './billing';
+export * from './credits';
+export * from './credits-schema';
 export * from './files';
 export * from './observability';
 export * from './organization';

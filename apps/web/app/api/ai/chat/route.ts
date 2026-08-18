@@ -68,6 +68,8 @@ export async function POST(request: Request) {
   if (!session || !organizationId) {
     return Response.json({ error: 'Authentication and an active workspace are required.' }, { status: 401 });
   }
+  const actorUserId = session.user.id;
+  const activeOrganizationId = organizationId;
 
   const body = (await request.json().catch(() => null)) as {
     conversationId?: string;
@@ -158,8 +160,8 @@ export async function POST(request: Request) {
   async function releaseReservation(reason: string) {
     try {
       await releaseUsageCreditReservation({
-        organizationId,
-        actorUserId: session.user.id,
+        organizationId: activeOrganizationId,
+        actorUserId,
         requestId,
         reservationMicros,
       });
@@ -167,8 +169,8 @@ export async function POST(request: Request) {
         name: 'web.ai.credit_reservation_released',
         component: 'web',
         correlationId,
-        organizationId,
-        userId: session.user.id,
+        organizationId: activeOrganizationId,
+        userId: actorUserId,
         attributes: { requestId, plan, modelId: resolvedModel.modelId, reservationMicros, reason },
       });
     } catch (error) {
@@ -177,8 +179,8 @@ export async function POST(request: Request) {
         level: 'error',
         component: 'web',
         correlationId,
-        organizationId,
-        userId: session.user.id,
+        organizationId: activeOrganizationId,
+        userId: actorUserId,
         attributes: { requestId, plan, modelId: resolvedModel.modelId, reservationMicros, reason },
         error,
       });

@@ -28,6 +28,7 @@ export * from './ai-policy';
 export * from './billing';
 export * from './files';
 export * from './observability';
+export * from './organization';
 export * from './platform';
 export * from './platform-extra';
 export * from './rag';

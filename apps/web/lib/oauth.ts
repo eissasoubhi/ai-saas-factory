@@ -1,4 +1,4 @@
-export type GitHubOAuthEnv = {
+export type GitHubOAuthEnv = Record<string, string | undefined> & {
   GITHUB_OAUTH_CLIENT_ID?: string;
   GITHUB_OAUTH_CLIENT_SECRET?: string;
 };

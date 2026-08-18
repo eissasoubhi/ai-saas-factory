@@ -31,6 +31,7 @@ export * from './credits';
 export * from './credits-schema';
 export * from './files';
 export * from './observability';
+export * from './organization';
 export * from './platform';
 export * from './platform-extra';
 export * from './rag';

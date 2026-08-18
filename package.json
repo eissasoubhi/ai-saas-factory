@@ -11,6 +11,7 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "e2e": "pnpm --filter @factory/e2e e2e",
     "format": "prettier --write .",
     "db:generate": "pnpm --filter @factory/db db:generate",
     "db:migrate": "pnpm --filter @factory/db db:migrate",

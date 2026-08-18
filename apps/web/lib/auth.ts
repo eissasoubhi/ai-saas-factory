@@ -1,5 +1,6 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
 import {
+  countOrganizationOwners,
   database,
   getOrganizationSeatUsage,
   getSubscriptionForOrganization,
@@ -12,8 +13,11 @@ import { betterAuth } from 'better-auth/minimal';
 import { organization } from 'better-auth/plugins';
 import { recordAuditEvent } from './audit';
 import { sendTransactionalEmail } from './email';
+import { githubOAuthProvider } from './oauth';
+import { wouldRemoveLastOwner } from './team-policy';
 
 const baseURL = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+const githubOAuth = githubOAuthProvider();
 
 async function teamSeatLimit(organizationId: string) {
   const subscription = await getSubscriptionForOrganization(organizationId);
@@ -44,11 +48,31 @@ async function enforceMemberSeatLimit(organizationId: string) {
   }
 }
 
+async function enforceOwnerContinuity(input: {
+  organizationId: string;
+  currentRole: string | readonly string[];
+  nextRole?: string | readonly string[] | null;
+}) {
+  const ownerCount = await countOrganizationOwners(input.organizationId);
+  if (
+    wouldRemoveLastOwner({
+      currentRole: input.currentRole,
+      nextRole: input.nextRole ?? null,
+      ownerCount,
+    })
+  ) {
+    throw new APIError('FORBIDDEN', {
+      message: 'A workspace must always have at least one owner.',
+    });
+  }
+}
+
 export const auth = betterAuth({
   appName: 'AI SaaS Factory',
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(database(), { provider: 'pg', schema }),
+  socialProviders: githubOAuth ? { github: githubOAuth } : {},
   emailVerification: {
     sendOnSignUp: true,
     sendOnSignIn: true,
@@ -87,6 +111,23 @@ export const auth = betterAuth({
         },
         async beforeAddMember({ organization: targetOrganization }) {
           await enforceMemberSeatLimit(targetOrganization.id);
+        },
+        async beforeRemoveMember({ member: targetMember, organization: targetOrganization }) {
+          await enforceOwnerContinuity({
+            organizationId: targetOrganization.id,
+            currentRole: targetMember.role,
+          });
+        },
+        async beforeUpdateMemberRole({
+          member: targetMember,
+          newRole,
+          organization: targetOrganization,
+        }) {
+          await enforceOwnerContinuity({
+            organizationId: targetOrganization.id,
+            currentRole: targetMember.role,
+            nextRole: newRole,
+          });
         },
         async afterCreateOrganization({ organization: createdOrganization, user }) {
           await recordAuditEvent({

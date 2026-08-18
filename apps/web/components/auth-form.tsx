@@ -5,11 +5,33 @@ import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 
-export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
+export function AuthForm({
+  mode,
+  githubEnabled = false,
+}: {
+  mode: 'sign-in' | 'sign-up';
+  githubEnabled?: boolean;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  async function signInWithGitHub() {
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await authClient.signIn.social({
+        provider: 'github',
+        callbackURL: mode === 'sign-up' ? '/onboarding' : '/dashboard',
+      });
+      if (result.error) throw new Error(result.error.message ?? 'Unable to continue with GitHub.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Something went wrong.');
+      setPending(false);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,29 +70,49 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-5">
-      {mode === 'sign-up' ? <Field label="Name" name="name" type="text" autoComplete="name" required /> : null}
-      <Field label="Email" name="email" type="email" autoComplete="email" required />
-      <Field label="Password" name="password" type="password" autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'} minLength={10} required />
+    <div className="space-y-5">
+      {githubEnabled ? (
+        <>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void signInWithGitHub()}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
+          >
+            Continue with GitHub
+          </button>
+          <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-zinc-600">
+            <span className="h-px flex-1 bg-zinc-800" />
+            or
+            <span className="h-px flex-1 bg-zinc-800" />
+          </div>
+        </>
+      ) : null}
 
-      {error ? <p className="rounded-lg border border-red-900 bg-red-950/40 p-3 text-sm text-red-200">{error}</p> : null}
-      {notice ? <p className="rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-sm text-zinc-200">{notice}</p> : null}
+      <form onSubmit={submit} className="space-y-5">
+        {mode === 'sign-up' ? <Field label="Name" name="name" type="text" autoComplete="name" required /> : null}
+        <Field label="Email" name="email" type="email" autoComplete="email" required />
+        <Field label="Password" name="password" type="password" autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'} minLength={10} required />
 
-      <button disabled={pending} className="w-full rounded-lg bg-white px-4 py-3 font-semibold text-black disabled:opacity-50">
-        {pending ? 'Working…' : mode === 'sign-up' ? 'Create account' : 'Sign in'}
-      </button>
+        {error ? <p className="rounded-lg border border-red-900 bg-red-950/40 p-3 text-sm text-red-200">{error}</p> : null}
+        {notice ? <p className="rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-sm text-zinc-200">{notice}</p> : null}
 
-      <div className="flex justify-between text-sm text-zinc-400">
-        {mode === 'sign-in' ? (
-          <>
-            <Link href="/sign-up">Create account</Link>
-            <Link href="/forgot-password">Forgot password?</Link>
-          </>
-        ) : (
-          <Link href="/sign-in">Already have an account?</Link>
-        )}
-      </div>
-    </form>
+        <button disabled={pending} className="w-full rounded-lg bg-white px-4 py-3 font-semibold text-black disabled:opacity-50">
+          {pending ? 'Working…' : mode === 'sign-up' ? 'Create account' : 'Sign in'}
+        </button>
+
+        <div className="flex justify-between text-sm text-zinc-400">
+          {mode === 'sign-in' ? (
+            <>
+              <Link href="/sign-up">Create account</Link>
+              <Link href="/forgot-password">Forgot password?</Link>
+            </>
+          ) : (
+            <Link href="/sign-in">Already have an account?</Link>
+          )}
+        </div>
+      </form>
+    </div>
   );
 }
 

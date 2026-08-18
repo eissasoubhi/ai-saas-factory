@@ -1,26 +1,27 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  generate-migration:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_saas_factory_test
+      BETTER_AUTH_SECRET: ci-only-secret-ci-only-secret-1234
+      BETTER_AUTH_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -28,15 +29,55 @@ jobs:
       - run: corepack enable
       - run: corepack prepare pnpm@10.33.0 --activate
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @factory/db exec drizzle-kit generate --name=usage_credits
-      - name: Commit generated migration
-        run: |
-          git add packages/db/drizzle
-          if git diff --cached --quiet; then
-            echo "Migration already synchronized"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: generate usage credits migration"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - run: pnpm --filter @factory/db exec drizzle-kit check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_saas_factory_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_saas_factory_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CI: true
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/ai_saas_factory_test
+      BETTER_AUTH_SECRET: ci-only-secret-ci-only-secret-1234
+      BETTER_AUTH_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.33.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @factory/e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @factory/db db:migrate
+      - run: pnpm --filter @factory/web build
+      - run: pnpm --filter @factory/e2e e2e
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/e2e/playwright-report
+            apps/e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7

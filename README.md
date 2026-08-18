@@ -88,6 +88,22 @@ See:
 - `docs/rag.md`
 - `docs/observability.md`
 
+## Pull request verification
+
+This repository uses explicit issue acceptance criteria and PR validation notes, which makes it a useful real-world target for [PRTruth](https://github.com/eissasoubhi/PRTruth), an evidence-based pull request verification CLI.
+
+For example, V0.2 issue `#1` and PR `#3` can be checked without modifying the repository:
+
+```bash
+npx -y prtruth@latest verify \
+  --repo eissasoubhi/ai-saas-factory \
+  --issue 1 \
+  --pr 3 \
+  --policy report-only
+```
+
+PRTruth compares issue requirements and PR completion claims with deterministic repository/CI evidence and reports `PROVEN`, `FAILED`, or `UNPROVEN` rather than treating a confident PR description as proof.
+
 ## Commercial intent
 
 This source is being developed as a paid starter kit. Do not add an open-source license until the commercial distribution model is finalized. See `COMMERCIAL-LICENSE-DRAFT.md`.

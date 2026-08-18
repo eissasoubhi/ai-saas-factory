@@ -26,9 +26,9 @@
 - [x] owner/admin/member authorization through Better Auth
 - [x] Resend transactional email adapter
 - [x] ARM64 self-hosted CI support
-- [ ] OAuth provider example
-- [ ] browser E2E suite
-- [ ] expanded member management actions
+- [x] OAuth provider example
+- [x] browser E2E suite on GitHub-hosted runners
+- [x] expanded member management actions with last-owner protection
 
 ## V0.3 — billing and entitlements
 
@@ -135,10 +135,12 @@
 
 ## V0.4D — usage credits and overages
 
-- [ ] usage credit ledger and overage model
-- [ ] plan-specific overage policy
-- [ ] billing reconciliation and customer-facing usage balance
-- [ ] Stripe metered-billing integration example
+- [x] append-only usage credit ledger and overage model
+- [x] plan-specific included-credit and overage policy
+- [x] atomic reservation / settlement against measured AI cost
+- [x] customer-facing monthly credit balance and allowance status
+- [ ] durable Stripe meter-event submission and reconciliation
+- [ ] Stripe metered-billing integration example and test-mode smoke
 
 ## V0.5 — mobile
 

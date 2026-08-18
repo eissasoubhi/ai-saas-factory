@@ -3,16 +3,20 @@ import {
   consumeAiRequestQuota,
   createConversation,
   createConversationMessage,
+  ensureMonthlyPlanCreditGrant,
   getConversationForOrganization,
   getSubscriptionForOrganization,
   listConversationMessages,
   paidPlanForSubscription,
   recordAiGeneration,
   recordUsage,
+  releaseUsageCreditReservation,
+  reserveUsageCredits,
   searchDocumentChunks,
+  settleUsageCreditReservation,
 } from '@factory/db';
 import { embedQuery } from '@factory/embeddings';
-import { entitlement } from '@factory/entitlements';
+import { aiCreditPolicy, entitlement } from '@factory/entitlements';
 import { correlationIdFromHeaders, emitTelemetry } from '@factory/telemetry';
 import { streamText, type ModelMessage } from 'ai';
 import { estimateAiCostMicros, parseModelPricingJson } from '@/lib/ai-pricing';
@@ -34,6 +38,12 @@ function rateLimitPerMinute() {
   const parsed = Number(process.env.AI_RATE_LIMIT_REQUESTS_PER_MINUTE ?? '20');
   if (!Number.isFinite(parsed)) return 20;
   return Math.min(Math.max(Math.floor(parsed), 1), 1_000);
+}
+
+function creditReservationMicros() {
+  const parsed = Number(process.env.AI_CREDIT_RESERVATION_MICROS ?? '100000');
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return 100_000;
+  return Math.min(Math.max(parsed, 1_000), 100_000_000);
 }
 
 function conversationTitle(message: string) {
@@ -102,7 +112,79 @@ export async function POST(request: Request) {
   const snapshot = await getSubscriptionForOrganization(organizationId);
   const plan = paidPlanForSubscription(snapshot);
   const monthlyLimit = entitlement(plan, 'ai_requests_monthly') as number;
+  const creditPolicy = aiCreditPolicy(plan);
+  const reservationMicros = creditReservationMicros();
   const requestId = crypto.randomUUID();
+
+  await ensureMonthlyPlanCreditGrant({
+    organizationId,
+    plan,
+    includedMicros: creditPolicy.includedMicros,
+  });
+  const creditReservation = await reserveUsageCredits({
+    organizationId,
+    actorUserId: session.user.id,
+    requestId,
+    reservationMicros,
+    overageAllowed: creditPolicy.overageAllowed,
+  });
+  if (!creditReservation.allowed) {
+    emitTelemetry({
+      name: 'web.ai.credit_rejected',
+      level: 'warn',
+      component: 'web',
+      correlationId,
+      durationMs: Date.now() - requestStartedAt,
+      organizationId,
+      userId: session.user.id,
+      attributes: {
+        requestId,
+        plan,
+        modelId: resolvedModel.modelId,
+        balanceBeforeMicros: creditReservation.balanceBeforeMicros,
+        reservationMicros,
+      },
+    });
+    return Response.json(
+      {
+        error: `Monthly AI credit allowance reached for the ${plan} plan.`,
+        reason: creditReservation.reason,
+        balanceMicros: creditReservation.balanceBeforeMicros,
+      },
+      { status: 402 },
+    );
+  }
+
+  async function releaseReservation(reason: string) {
+    try {
+      await releaseUsageCreditReservation({
+        organizationId,
+        actorUserId: session.user.id,
+        requestId,
+        reservationMicros,
+      });
+      emitTelemetry({
+        name: 'web.ai.credit_reservation_released',
+        component: 'web',
+        correlationId,
+        organizationId,
+        userId: session.user.id,
+        attributes: { requestId, plan, modelId: resolvedModel.modelId, reservationMicros, reason },
+      });
+    } catch (error) {
+      emitTelemetry({
+        name: 'web.ai.credit_release_failed',
+        level: 'error',
+        component: 'web',
+        correlationId,
+        organizationId,
+        userId: session.user.id,
+        attributes: { requestId, plan, modelId: resolvedModel.modelId, reservationMicros, reason },
+        error,
+      });
+    }
+  }
+
   const quota = await consumeAiRequestQuota({
     organizationId,
     actorUserId: session.user.id,
@@ -112,6 +194,7 @@ export async function POST(request: Request) {
     metadata: { plan, modelId: resolvedModel.modelId, useKnowledge: body?.useKnowledge === true },
   });
   if (!quota.allowed) {
+    await releaseReservation('quota_rejected');
     emitTelemetry({
       name: 'web.ai.quota_rejected',
       level: 'warn',
@@ -159,6 +242,7 @@ export async function POST(request: Request) {
         });
       }
     } catch (error) {
+      await releaseReservation('retrieval_failed');
       emitTelemetry({
         name: 'web.ai.retrieval_failed',
         level: 'error',
@@ -177,22 +261,40 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!existingConversation) {
-    existingConversation = await createConversation({
+  let userMessage: Awaited<ReturnType<typeof createConversationMessage>>;
+  try {
+    if (!existingConversation) {
+      existingConversation = await createConversation({
+        organizationId,
+        createdByUserId: session.user.id,
+        title: conversationTitle(message),
+        modelId: resolvedModel.modelId,
+      });
+    }
+
+    userMessage = await createConversationMessage({
       organizationId,
-      createdByUserId: session.user.id,
-      title: conversationTitle(message),
+      conversationId: existingConversation.id,
+      role: 'user',
+      content: message,
       modelId: resolvedModel.modelId,
     });
+  } catch (error) {
+    await releaseReservation('conversation_persistence_failed');
+    emitTelemetry({
+      name: 'web.ai.persistence_failed',
+      level: 'error',
+      component: 'web',
+      correlationId,
+      durationMs: Date.now() - requestStartedAt,
+      organizationId,
+      userId: session.user.id,
+      attributes: { requestId, modelId: resolvedModel.modelId },
+      error,
+    });
+    return Response.json({ error: 'Unable to persist the conversation.' }, { status: 503 });
   }
 
-  const userMessage = await createConversationMessage({
-    organizationId,
-    conversationId: existingConversation.id,
-    role: 'user',
-    content: message,
-    modelId: resolvedModel.modelId,
-  });
   const persistedMessages = await listConversationMessages(organizationId, existingConversation.id);
   assertOrganizationScope(organizationId, persistedMessages);
   const generationStartedAt = Date.now();
@@ -205,7 +307,10 @@ export async function POST(request: Request) {
     system,
     messages: toModelMessages(persistedMessages),
     async onFinish({ text, finishReason, totalUsage, response }) {
-      if (!text.trim()) return;
+      if (!text.trim()) {
+        await releaseReservation('empty_generation');
+        return;
+      }
 
       const inputTokens = totalUsage.inputTokens ?? null;
       const outputTokens = totalUsage.outputTokens ?? null;
@@ -272,6 +377,33 @@ export async function POST(request: Request) {
         }));
       }
       await Promise.all(usageWrites);
+
+      try {
+        await settleUsageCreditReservation({
+          organizationId,
+          actorUserId: session.user.id,
+          requestId,
+          reservationMicros,
+          actualCostMicros: estimatedCostMicros ?? 0,
+        });
+      } catch (error) {
+        emitTelemetry({
+          name: 'web.ai.credit_settlement_failed',
+          level: 'error',
+          component: 'web',
+          correlationId,
+          organizationId,
+          userId: session.user.id,
+          attributes: {
+            requestId,
+            generationId: generation.id,
+            reservationMicros,
+            actualCostMicros: estimatedCostMicros,
+          },
+          error,
+        });
+      }
+
       await recordAuditEvent({
         organizationId,
         actorUserId: session.user.id,
@@ -291,6 +423,8 @@ export async function POST(request: Request) {
           durationMs,
           useKnowledge: body?.useKnowledge === true,
           retrievedChunks: retrievedChunks.length,
+          creditReservationMicros: reservationMicros,
+          creditOverageAllowed: creditPolicy.overageAllowed,
         },
       });
       emitTelemetry({
@@ -313,6 +447,8 @@ export async function POST(request: Request) {
           estimatedCostMicros,
           useKnowledge: body?.useKnowledge === true,
           retrievedChunks: retrievedChunks.length,
+          creditReservationMicros: reservationMicros,
+          creditOverageAllowed: creditPolicy.overageAllowed,
         },
       });
 
@@ -354,6 +490,7 @@ export async function POST(request: Request) {
 
   void result.consumeStream({
     onError: (error) => {
+      void releaseReservation('stream_failed');
       emitTelemetry({
         name: 'web.ai.stream_failed',
         level: 'error',

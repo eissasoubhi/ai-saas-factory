@@ -1,0 +1,260 @@
+name: Development Cockpit Sync
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+      - converted_to_draft
+      - closed
+  issues:
+    types:
+      - opened
+      - reopened
+      - closed
+      - labeled
+      - unlabeled
+  schedule:
+    - cron: '*/5 * * * *'
+
+concurrency:
+  group: development-cockpit-hosted-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# This lightweight shared sync intentionally runs outside the self-hosted CI fleet.
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Detect Projects token
+        id: auth
+        shell: bash
+        env:
+          COCKPIT_TOKEN: ${{ secrets.DEVELOPMENT_COCKPIT_TOKEN }}
+        run: |
+          if [ -n "$COCKPIT_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "DEVELOPMENT_COCKPIT_TOKEN is not configured in this repository yet; sync is skipped."
+          fi
+
+      - name: Synchronize GitHub Project
+        if: steps.auth.outputs.available == 'true'
+        uses: actions/github-script@v9
+        env:
+          COCKPIT_CONFIG: .github/development-cockpit.json
+        with:
+          github-token: ${{ secrets.DEVELOPMENT_COCKPIT_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            const config = JSON.parse(fs.readFileSync(process.env.COCKPIT_CONFIG, 'utf8'));
+            const owner = config.owner;
+            const projectTitle = config.projectTitle;
+            const repositories = config.repositories;
+            const trackedRepositories = new Set(repositories);
+
+            function marker(body, key) {
+              const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const match = String(body || '').match(new RegExp(`<!--\\s*cockpit:${escaped}=([\\s\\S]*?)-->`, 'i'));
+              return match ? match[1].trim() : null;
+            }
+
+            function labelNames(content) {
+              return new Set((content.labels?.nodes || []).map((label) => label.name.toLowerCase()));
+            }
+
+            const ownerData = await github.graphql(`
+              query($login: String!) {
+                user(login: $login) {
+                  projectsV2(first: 100) {
+                    nodes { id number title closed }
+                  }
+                }
+              }
+            `, { login: owner });
+
+            const project = ownerData.user?.projectsV2.nodes.find(
+              (candidate) => candidate.title === projectTitle && !candidate.closed,
+            );
+            if (!project) throw new Error(`Project ${projectTitle} was not found.`);
+
+            const metadata = await github.graphql(`
+              query($login: String!, $number: Int!) {
+                user(login: $login) {
+                  projectV2(number: $number) {
+                    fields(first: 100) {
+                      nodes {
+                        __typename
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options { id name }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `, { login: owner, number: project.number });
+
+            const statusField = metadata.user.projectV2.fields.nodes.find(
+              (field) => field.__typename === 'ProjectV2SingleSelectField' && field.name === 'Status',
+            );
+            if (!statusField) throw new Error('Development Cockpit Status field was not found.');
+            const statusOptions = new Map(statusField.options.map((option) => [option.name, option.id]));
+
+            async function getProjectItems() {
+              const items = [];
+              let after = null;
+              do {
+                const data = await github.graphql(`
+                  query($login: String!, $number: Int!, $after: String) {
+                    user(login: $login) {
+                      projectV2(number: $number) {
+                        items(first: 100, after: $after) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            id
+                            statusValue: fieldValueByName(name: "Status") {
+                              ... on ProjectV2ItemFieldSingleSelectValue { name }
+                            }
+                            content {
+                              __typename
+                              ... on Issue {
+                                id number title body state url
+                                repository { nameWithOwner }
+                                labels(first: 50) { nodes { name } }
+                              }
+                              ... on PullRequest {
+                                id number title body state url isDraft merged
+                                repository { nameWithOwner }
+                                labels(first: 50) { nodes { name } }
+                                commits(last: 1) {
+                                  nodes { commit { statusCheckRollup { state } } }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                `, { login: owner, number: project.number, after });
+                const connection = data.user.projectV2.items;
+                items.push(...connection.nodes);
+                after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+              } while (after);
+              return items;
+            }
+
+            let items = await getProjectItems();
+            const existingContentIds = new Set(items.map((item) => item.content?.id).filter(Boolean));
+            let added = 0;
+
+            for (const fullName of repositories) {
+              const [repoOwner, repo] = fullName.split('/');
+              const [issues, pulls] = await Promise.all([
+                github.paginate(github.rest.issues.listForRepo, {
+                  owner: repoOwner, repo, state: 'open', per_page: 100,
+                }),
+                github.paginate(github.rest.pulls.list, {
+                  owner: repoOwner, repo, state: 'open', per_page: 100,
+                }),
+              ]);
+
+              const contentIds = [
+                ...issues.filter((issue) => !issue.pull_request).map((issue) => issue.node_id),
+                ...pulls.map((pull) => pull.node_id),
+              ];
+
+              for (const contentId of contentIds) {
+                if (existingContentIds.has(contentId)) continue;
+                try {
+                  await github.graphql(`
+                    mutation($projectId: ID!, $contentId: ID!) {
+                      addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                        item { id }
+                      }
+                    }
+                  `, { projectId: project.id, contentId });
+                  existingContentIds.add(contentId);
+                  added += 1;
+                } catch (error) {
+                  if (!/already|exists/i.test(String(error.message))) throw error;
+                }
+              }
+            }
+
+            if (added > 0) items = await getProjectItems();
+
+            function inferStatus(content) {
+              if (content.__typename === 'Issue' && content.state === 'CLOSED') return 'Done';
+              if (content.__typename === 'PullRequest' && (content.merged || content.state === 'CLOSED')) return 'Done';
+
+              const explicit = marker(content.body, 'status');
+              if (explicit && statusOptions.has(explicit)) return explicit;
+
+              const labels = labelNames(content);
+              if (labels.has('status:blocked')) return 'Blocked';
+              if (labels.has('status:backlog')) return 'Backlog';
+              if (content.__typename === 'Issue') {
+                return labels.has('status:in-progress') ? 'In Progress' : 'Todo';
+              }
+
+              const checkState = content.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state || null;
+              if (checkState === 'FAILURE' || checkState === 'ERROR') return 'Blocked';
+              if (content.isDraft) return 'PR Open';
+              if (checkState === 'PENDING' || checkState === 'EXPECTED' || checkState === 'SUCCESS') return 'CI / Review';
+              return 'PR Open';
+            }
+
+            let updated = 0;
+            for (const item of items) {
+              const content = item.content;
+              if (!content?.repository?.nameWithOwner || !trackedRepositories.has(content.repository.nameWithOwner)) continue;
+
+              const desiredStatus = inferStatus(content);
+              const optionId = statusOptions.get(desiredStatus);
+              if (!optionId || item.statusValue?.name === desiredStatus) continue;
+
+              await github.graphql(`
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) { projectV2Item { id } }
+                }
+              `, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: statusField.id,
+                optionId,
+              });
+              updated += 1;
+            }
+
+            core.summary
+              .addHeading(`${projectTitle} · Hosted Sync`)
+              .addRaw(`Repositories scanned: ${repositories.length}\n`)
+              .addRaw(`Items added: ${added}\n`)
+              .addRaw(`Status updates: ${updated}\n`)
+              .write();
+
+      - name: Explain skipped sync
+        if: steps.auth.outputs.available != 'true'
+        run: |
+          echo "Hosted sync is ready. Add the DEVELOPMENT_COCKPIT_TOKEN repository secret to activate it."

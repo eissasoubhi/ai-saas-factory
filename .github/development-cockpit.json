@@ -1,0 +1,12 @@
+{
+  "owner": "eissasoubhi",
+  "projectTitle": "Aissa Development Cockpit",
+  "repositories": [
+    "eissasoubhi/PRTruth",
+    "eissasoubhi/mpc",
+    "eissasoubhi/binnace-bot",
+    "eissasoubhi/ai-saas-factory",
+    "eissasoubhi/jobpilot-local"
+  ],
+  "syncIntervalMinutes": 5
+}

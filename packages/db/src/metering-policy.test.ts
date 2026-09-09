@@ -3,6 +3,7 @@ import {
   allocateClosedPeriodOverage,
   isClosedUsageCreditPeriod,
   stripeMeterProviderIdentifier,
+  usageCreditPeriodEnd,
 } from './metering-policy';
 
 describe('closed-period Stripe metering policy', () => {
@@ -26,12 +27,19 @@ describe('closed-period Stripe metering policy', () => {
     expect(allocateClosedPeriodOverage([], 100_000)).toEqual([]);
   });
 
-  it('rejects current and malformed periods', () => {
+  it('rejects current, future and malformed periods', () => {
     const now = new Date('2026-09-09T12:00:00Z');
     expect(isClosedUsageCreditPeriod('2026-08', now)).toBe(true);
     expect(isClosedUsageCreditPeriod('2026-09', now)).toBe(false);
     expect(isClosedUsageCreditPeriod('2026-10', now)).toBe(false);
+    expect(isClosedUsageCreditPeriod('2026-13', now)).toBe(false);
     expect(isClosedUsageCreditPeriod('bad', now)).toBe(false);
+  });
+
+  it('meters the closed period at its final UTC second', () => {
+    expect(usageCreditPeriodEnd('2026-02').toISOString()).toBe('2026-02-28T23:59:59.000Z');
+    expect(usageCreditPeriodEnd('2028-02').toISOString()).toBe('2028-02-29T23:59:59.000Z');
+    expect(() => usageCreditPeriodEnd('2026-00')).toThrow('valid month');
   });
 
   it('uses a stable short provider identifier', () => {

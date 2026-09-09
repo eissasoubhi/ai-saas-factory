@@ -9,9 +9,24 @@ export type OverageAllocation = SettledUsageCost & {
   valueMicros: number;
 };
 
+function parsePeriodKey(periodKey: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(periodKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
 export function isClosedUsageCreditPeriod(periodKey: string, now = new Date()) {
-  if (!/^\d{4}-\d{2}$/.test(periodKey)) return false;
+  if (!parsePeriodKey(periodKey)) return false;
   return periodKey < usageCreditPeriodKey(now);
+}
+
+export function usageCreditPeriodEnd(periodKey: string) {
+  const parsed = parsePeriodKey(periodKey);
+  if (!parsed) throw new Error('Usage credit period must use YYYY-MM with a valid month');
+  return new Date(Date.UTC(parsed.year, parsed.month, 1) - 1_000);
 }
 
 export function allocateClosedPeriodOverage(

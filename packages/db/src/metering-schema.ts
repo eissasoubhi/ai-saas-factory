@@ -20,6 +20,7 @@ export const stripeMeterSubmission = pgTable(
     meteredAt: timestamp('metered_at', { withTimezone: true }).notNull(),
     status: text('status').notNull().default('pending'),
     attemptCount: integer('attempt_count').notNull().default(0),
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true }),
     lastError: text('last_error'),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -1,3 +1,4 @@
+import { expo } from '@better-auth/expo';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
 import {
   countOrganizationOwners,
@@ -18,6 +19,11 @@ import { wouldRemoveLastOwner } from './team-policy';
 
 const baseURL = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
 const githubOAuth = githubOAuthProvider();
+const mobileTrustedOrigins = [
+  'ai-saas-factory://',
+  'ai-saas-factory://*',
+  ...(process.env.NODE_ENV === 'development' ? ['exp://', 'exp://**'] : []),
+];
 
 async function teamSeatLimit(organizationId: string) {
   const subscription = await getSubscriptionForOrganization(organizationId);
@@ -70,6 +76,7 @@ async function enforceOwnerContinuity(input: {
 export const auth = betterAuth({
   appName: 'AI SaaS Factory',
   baseURL,
+  trustedOrigins: mobileTrustedOrigins,
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(database(), { provider: 'pg', schema }),
   socialProviders: githubOAuth ? { github: githubOAuth } : {},
@@ -102,6 +109,7 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    expo(),
     organization({
       requireEmailVerificationOnInvitation: true,
       invitationExpiresIn: 60 * 60 * 48,

@@ -17,6 +17,7 @@ export const stripeMeterSubmission = pgTable(
     eventName: text('event_name').notNull(),
     valueMicros: bigint('value_micros', { mode: 'number' }).notNull(),
     providerIdentifier: text('provider_identifier').notNull(),
+    meteredAt: timestamp('metered_at', { withTimezone: true }).notNull(),
     status: text('status').notNull().default('pending'),
     attemptCount: integer('attempt_count').notNull().default(0),
     lastError: text('last_error'),

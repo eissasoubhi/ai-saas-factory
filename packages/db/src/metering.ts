@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, inArray, or, sql, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql, sum } from 'drizzle-orm';
 import { usageCreditLedger } from './credits-schema';
 import { database } from './index';
 import {
   allocateClosedPeriodOverage,
   isClosedUsageCreditPeriod,
   stripeMeterProviderIdentifier,
+  usageCreditPeriodEnd,
 } from './metering-policy';
 import { stripeMeterSubmission } from './metering-schema';
 
@@ -33,6 +34,7 @@ export async function reconcileClosedPeriodStripeMetering(input: {
     throw new Error('Stripe meter event name must contain 1-100 characters');
   }
 
+  const meteredAt = usageCreditPeriodEnd(input.periodKey);
   const db = database();
   return db.transaction(async (tx) => {
     const lockKey = `stripe-meter-reconcile:${input.organizationId}:${input.periodKey}`;
@@ -72,13 +74,14 @@ export async function reconcileClosedPeriodStripeMetering(input: {
       actualCostMicros: settlementActualCostMicros(row.metadata),
     }));
     const allocations = allocateClosedPeriodOverage(settled, allowanceMicros);
-    let created = 0;
+    const createdSubmissionIds: string[] = [];
 
     for (const allocation of allocations) {
+      const id = randomUUID();
       const [inserted] = await tx
         .insert(stripeMeterSubmission)
         .values({
-          id: randomUUID(),
+          id,
           organizationId: input.organizationId,
           ledgerEntryId: allocation.ledgerEntryId,
           periodKey: input.periodKey,
@@ -86,20 +89,22 @@ export async function reconcileClosedPeriodStripeMetering(input: {
           eventName: input.eventName,
           valueMicros: allocation.valueMicros,
           providerIdentifier: stripeMeterProviderIdentifier(allocation.ledgerEntryId),
+          meteredAt,
           status: 'pending',
           updatedAt: now,
         })
         .onConflictDoNothing({ target: stripeMeterSubmission.ledgerEntryId })
         .returning({ id: stripeMeterSubmission.id });
-      if (inserted) created += 1;
+      if (inserted) createdSubmissionIds.push(inserted.id);
     }
 
     return {
       periodKey: input.periodKey,
+      meteredAt,
       allowanceMicros,
       settledCostMicros: settled.reduce((total, row) => total + row.actualCostMicros, 0),
       overageMicros: allocations.reduce((total, row) => total + row.valueMicros, 0),
-      created,
+      createdSubmissionIds,
     };
   });
 }
@@ -111,6 +116,8 @@ export async function listStripeMeterSubmissionsForOrganization(input: {
 }) {
   const limit = Math.max(1, Math.min(100, Math.trunc(input.limit ?? 50)));
   const db = database();
+  const conditions = [eq(stripeMeterSubmission.organizationId, input.organizationId)];
+  if (input.periodKey) conditions.push(eq(stripeMeterSubmission.periodKey, input.periodKey));
   return db
     .select({
       id: stripeMeterSubmission.id,
@@ -122,16 +129,12 @@ export async function listStripeMeterSubmissionsForOrganization(input: {
       status: stripeMeterSubmission.status,
       attemptCount: stripeMeterSubmission.attemptCount,
       lastError: stripeMeterSubmission.lastError,
+      meteredAt: stripeMeterSubmission.meteredAt,
       sentAt: stripeMeterSubmission.sentAt,
       createdAt: stripeMeterSubmission.createdAt,
     })
     .from(stripeMeterSubmission)
-    .where(
-      and(
-        eq(stripeMeterSubmission.organizationId, input.organizationId),
-        ...(input.periodKey ? [eq(stripeMeterSubmission.periodKey, input.periodKey)] : []),
-      ),
-    )
+    .where(and(...conditions))
     .orderBy(desc(stripeMeterSubmission.createdAt), desc(stripeMeterSubmission.id))
     .limit(limit);
 }
@@ -142,24 +145,32 @@ export async function getStripeMeterSubmissionForWorker(id: string) {
   return row ?? null;
 }
 
-export async function claimStripeMeterSubmission(id: string) {
+export async function claimStripeMeterSubmission(id: string, now = new Date(), leaseMs = 5 * 60 * 1000) {
   const db = database();
   const [existing] = await db.select().from(stripeMeterSubmission).where(eq(stripeMeterSubmission.id, id)).limit(1);
   if (!existing) return { state: 'missing' as const, submission: null };
   if (existing.status === 'sent') return { state: 'sent' as const, submission: existing };
 
+  const staleBefore = new Date(now.getTime() - leaseMs);
   const [claimed] = await db
     .update(stripeMeterSubmission)
     .set({
       status: 'processing',
       attemptCount: sql`${stripeMeterSubmission.attemptCount} + 1`,
+      processingStartedAt: now,
       lastError: null,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(
       and(
         eq(stripeMeterSubmission.id, id),
-        inArray(stripeMeterSubmission.status, ['pending', 'failed']),
+        or(
+          inArray(stripeMeterSubmission.status, ['pending', 'failed']),
+          and(
+            eq(stripeMeterSubmission.status, 'processing'),
+            or(isNull(stripeMeterSubmission.processingStartedAt), lt(stripeMeterSubmission.processingStartedAt, staleBefore)),
+          ),
+        ),
       ),
     )
     .returning();
@@ -173,7 +184,7 @@ export async function markStripeMeterSubmissionSent(id: string, sentAt = new Dat
   const db = database();
   await db
     .update(stripeMeterSubmission)
-    .set({ status: 'sent', sentAt, lastError: null, updatedAt: sentAt })
+    .set({ status: 'sent', sentAt, processingStartedAt: null, lastError: null, updatedAt: sentAt })
     .where(eq(stripeMeterSubmission.id, id));
 }
 
@@ -184,6 +195,7 @@ export async function markStripeMeterSubmissionFailed(id: string, error: unknown
     .update(stripeMeterSubmission)
     .set({
       status: terminal ? 'dead' : 'failed',
+      processingStartedAt: null,
       lastError: message.slice(0, 4_000),
       updatedAt: new Date(),
     })

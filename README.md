@@ -13,7 +13,7 @@ A commercial, AI-native B2B SaaS starter for teams that want to ship production 
 - Next.js 16.2.x / React 19.2
 - TypeScript
 - PostgreSQL + Drizzle ORM + pgvector
-- Better Auth with organizations
+- Better Auth with organizations and optional GitHub OAuth
 - Stripe Checkout, Customer Portal and verified webhooks
 - AI SDK 6 with centralized chat/embedding boundaries
 - S3-compatible private storage via AWS SDK v3
@@ -31,6 +31,7 @@ apps/
   web/         Next.js commercial web app
   worker/      durable ingestion/background worker
   mobile/      Expo mobile shell (V1.5)
+  e2e/         Playwright browser validation
 packages/
   db/          schema, migrations, billing, AI, files, vectors, audit and usage persistence
   documents/   extraction limits + deterministic document chunking
@@ -45,10 +46,23 @@ packages/
 
 ## Local setup
 
+For the guided bootstrap:
+
+```bash
+corepack enable
+corepack prepare pnpm@10.33.0 --activate
+pnpm bootstrap
+pnpm dev
+```
+
+The bootstrap creates `.env` from `.env.example` when missing, installs the frozen lockfile, starts local Docker services and applies committed migrations.
+
+Manual equivalent:
+
 ```bash
 cp .env.example .env
 corepack enable
-pnpm install
+pnpm install --frozen-lockfile
 docker compose up -d
 pnpm db:migrate
 pnpm dev
@@ -65,17 +79,11 @@ Private files require a configured S3-compatible bucket. RAG additionally requir
 
 ## Current status
 
-V0.2 provides production-oriented identity and workspace plumbing. V0.3 adds organization-scoped Stripe billing, webhook reliability, subscription-backed entitlements and team-seat enforcement.
+The web foundation now includes production-oriented identity/workspaces, optional GitHub OAuth, Stripe subscription billing, subscription-backed entitlements, persisted AI conversations and metering, private object storage, durable PostgreSQL jobs, tenant-isolated RAG, audit/usage observability, organization API keys, signed outbound customer webhooks and an append-only usage-credit/overage model.
 
-V0.4A adds persisted tenant-scoped AI conversations, server-owned history, model allow-listing, atomic monthly/per-minute request reservation, provider token capture, configurable cost estimation and streaming chat.
+GitHub-hosted CI validates frozen dependency installation, Drizzle consistency, lint, typecheck, tests, production build, migration application to ephemeral PostgreSQL/pgvector and an authenticated Playwright browser flow.
 
-V0.4B1 adds private S3-compatible files, direct presigned browser uploads, post-upload validation and durable PostgreSQL jobs.
-
-V0.4B2 adds the end-to-end knowledge pipeline: PDF/text extraction, deterministic chunking, batched embeddings, pgvector persistence, retry-safe re-indexing, exact tenant-scoped cosine retrieval, a **Use workspace knowledge** chat mode, source markers and prompt-injection boundaries for retrieved documents.
-
-V0.4C1 adds a tenant-scoped audit viewer, AI usage/configured-cost dashboard, high-value organization/billing/file/AI audit events, structured web/worker telemetry, request correlation IDs and recursive redaction of credentials, prompts, document content and signed URLs.
-
-The project is still pre-launch: OAuth examples, browser E2E coverage, real Stripe/provider/storage/RAG smoke tests, storage/retrieval quotas, organization API keys, outbound customer webhooks, mobile billing and commercial packaging remain on the roadmap.
+The project is still pre-launch. Remaining high-value work includes Stripe metered overage submission/reconciliation, real-provider smoke tests, storage/retrieval quotas, the authenticated Expo client, and the final commercial packaging/demo/documentation pass.
 
 See:
 
@@ -87,6 +95,10 @@ See:
 - `docs/storage-jobs.md`
 - `docs/rag.md`
 - `docs/observability.md`
+- `docs/deployment.md`
+- `docs/release.md`
+- `docs/versioning.md`
+- `CHANGELOG.md`
 
 ## Pull request verification
 
@@ -106,4 +118,4 @@ PRTruth compares issue requirements and PR completion claims with deterministic 
 
 ## Commercial intent
 
-This source is being developed as a paid starter kit. Do not add an open-source license until the commercial distribution model is finalized. See `COMMERCIAL-LICENSE-DRAFT.md`.
+This source is being developed as a paid starter kit. The public repository does **not** grant an open-source license by default. Do not add an OSI license until the commercial distribution model is finalized. See `COMMERCIAL-LICENSE-DRAFT.md`.

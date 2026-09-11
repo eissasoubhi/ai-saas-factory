@@ -1,0 +1,43 @@
+name: D2 Migration Sync
+
+on:
+  pull_request:
+    paths:
+      - 'packages/db/src/metering-schema.ts'
+      - 'packages/db/drizzle.config.ts'
+      - 'packages/db/drizzle/**'
+      - '.github/workflows/d2-migration-sync.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_saas_factory_test
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.33.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @factory/db db:generate
+      - name: Commit migration
+        run: |
+          git add packages/db/drizzle
+          if git diff --cached --quiet; then
+            echo "Migration already synchronized"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: generate Stripe metering migration"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}

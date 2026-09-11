@@ -9,6 +9,8 @@ export type OverageAllocation = SettledUsageCost & {
   valueMicros: number;
 };
 
+const STRIPE_METER_MAX_AGE_MS = 35 * 24 * 60 * 60 * 1_000;
+
 function parsePeriodKey(periodKey: string) {
   const match = /^(\d{4})-(\d{2})$/.exec(periodKey);
   if (!match) return null;
@@ -27,6 +29,12 @@ export function usageCreditPeriodEnd(periodKey: string) {
   const parsed = parsePeriodKey(periodKey);
   if (!parsed) throw new Error('Usage credit period must use YYYY-MM with a valid month');
   return new Date(Date.UTC(parsed.year, parsed.month, 1) - 1_000);
+}
+
+export function isStripeMeterPeriodWithinSubmissionWindow(periodKey: string, now = new Date()) {
+  if (!isClosedUsageCreditPeriod(periodKey, now)) return false;
+  const meteredAt = usageCreditPeriodEnd(periodKey);
+  return meteredAt.getTime() >= now.getTime() - STRIPE_METER_MAX_AGE_MS;
 }
 
 export function periodAllowsStripeOverage(planReferences: readonly (string | null)[]) {

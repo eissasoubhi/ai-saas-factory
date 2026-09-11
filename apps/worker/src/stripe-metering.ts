@@ -8,6 +8,7 @@ import { emitTelemetry } from '@factory/telemetry';
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const DEFAULT_API_VERSION = '2026-04-22.dahlia';
+const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
 
 function stripeSecretKey() {
   const value = process.env.STRIPE_SECRET_KEY?.trim();
@@ -42,6 +43,7 @@ async function sendStripeMeterEvent(input: {
       'Idempotency-Key': `meter/${input.providerIdentifier}`,
     },
     body: params,
+    signal: AbortSignal.timeout(STRIPE_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {

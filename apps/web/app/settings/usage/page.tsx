@@ -2,6 +2,7 @@ import {
   getOrganizationUsageOverview,
   getSubscriptionForOrganization,
   getUsageCreditBalance,
+  listStripeMeterSubmissionsForOrganization,
   paidPlanForSubscription,
   usageCreditPeriodKey,
 } from '@factory/db';
@@ -24,15 +25,46 @@ function formatUsdMicros(value: number) {
   }).format(value / 1_000_000);
 }
 
-export default async function UsageSettingsPage() {
+function previousUtcPeriodKey(now = new Date()) {
+  return usageCreditPeriodKey(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)));
+}
+
+function meteringNotice(params: {
+  meteringPeriod?: string;
+  meteringQueued?: string;
+  meteringQueueFailed?: string;
+  meteringRetryQueued?: string;
+  meteringError?: string;
+}) {
+  if (params.meteringError) return `Metering action failed: ${params.meteringError}.`;
+  if (params.meteringRetryQueued) return 'Stripe meter submission retry queued.';
+  if (params.meteringPeriod) {
+    return `Reconciled ${params.meteringPeriod}: ${params.meteringQueued ?? '0'} queued, ${params.meteringQueueFailed ?? '0'} queue failures.`;
+  }
+  return null;
+}
+
+export default async function UsageSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    meteringPeriod?: string;
+    meteringQueued?: string;
+    meteringQueueFailed?: string;
+    meteringRetryQueued?: string;
+    meteringError?: string;
+  }>;
+}) {
   const requestHeaders = new Headers(await headers());
   const context = await getActiveOrganizationContext(requestHeaders);
   if (!context) redirect('/dashboard');
   if (context.role !== 'owner' && context.role !== 'admin') redirect('/dashboard');
 
-  const [usage, snapshot] = await Promise.all([
+  const params = await searchParams;
+  const [usage, snapshot, meterSubmissions] = await Promise.all([
     getOrganizationUsageOverview(context.organization.id),
     getSubscriptionForOrganization(context.organization.id),
+    listStripeMeterSubmissionsForOrganization({ organizationId: context.organization.id, limit: 50 }),
   ]);
   const plan = paidPlanForSubscription(snapshot);
   const requestLimit = entitlement(plan, 'ai_requests_monthly') as number;
@@ -42,6 +74,8 @@ export default async function UsageSettingsPage() {
     usageCreditPeriodKey(),
   );
   const modelIds = [...new Set(usage.byModel.map((row) => row.modelId))];
+  const notice = meteringNotice(params);
+  const defaultClosedPeriod = previousUtcPeriodKey();
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-6 py-12">
@@ -57,6 +91,10 @@ export default async function UsageSettingsPage() {
         </div>
       </div>
 
+      {notice ? (
+        <p className="mt-6 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-300">{notice}</p>
+      ) : null}
+
       <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Requests" value={`${formatNumber(usage.requests)} / ${formatNumber(requestLimit)}`} />
         <Metric label="Credit balance" value={formatUsdMicros(creditBalanceMicros)} />
@@ -71,6 +109,77 @@ export default async function UsageSettingsPage() {
       <p className="mt-3 text-xs text-zinc-600">
         Monthly plan credits are granted lazily on the first AI request of the period. Before first use, the ledger balance can be zero while the plan allowance is still available.
       </p>
+
+      <section className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="max-w-2xl">
+            <h2 className="text-xl font-semibold">Stripe metered overage</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Reconciliation is limited to closed UTC months. Only months whose immutable ledger contains a Pro plan grant can create billable overage submissions.
+            </p>
+          </div>
+          <form className="flex flex-wrap items-end gap-2" action="/api/billing/metering/reconcile" method="post">
+            <label className="text-xs text-zinc-500">
+              Closed month
+              <input
+                className="mt-1 block rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+                type="month"
+                name="periodKey"
+                defaultValue={defaultClosedPeriod}
+                max={defaultClosedPeriod}
+                required
+              />
+            </label>
+            <button className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black" type="submit">
+              Reconcile & queue
+            </button>
+          </form>
+        </div>
+
+        {meterSubmissions.length === 0 ? (
+          <p className="mt-6 text-sm text-zinc-500">No Stripe meter submissions have been created for this workspace.</p>
+        ) : (
+          <div className="mt-6 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="text-zinc-500">
+                <tr>
+                  <th className="pb-3 pr-4 font-medium">Period</th>
+                  <th className="pb-3 pr-4 font-medium">Value</th>
+                  <th className="pb-3 pr-4 font-medium">Status</th>
+                  <th className="pb-3 pr-4 font-medium">Attempts</th>
+                  <th className="pb-3 pr-4 font-medium">Meter timestamp</th>
+                  <th className="pb-3 pr-4 font-medium">Last error</th>
+                  <th className="pb-3 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {meterSubmissions.map((submission) => (
+                  <tr key={submission.id}>
+                    <td className="py-3 pr-4 font-mono text-xs">{submission.periodKey}</td>
+                    <td className="py-3 pr-4">{formatUsdMicros(submission.valueMicros)}</td>
+                    <td className="py-3 pr-4">{submission.status}</td>
+                    <td className="py-3 pr-4">{submission.attemptCount}</td>
+                    <td className="py-3 pr-4 text-xs text-zinc-400">{submission.meteredAt.toISOString()}</td>
+                    <td className="max-w-sm truncate py-3 pr-4 text-xs text-zinc-500" title={submission.lastError ?? undefined}>
+                      {submission.lastError ?? '—'}
+                    </td>
+                    <td className="py-3">
+                      {submission.status === 'failed' || submission.status === 'dead' ? (
+                        <form action="/api/billing/metering/retry" method="post">
+                          <input type="hidden" name="submissionId" value={submission.id} />
+                          <button className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs" type="submit">Retry</button>
+                        </form>
+                      ) : (
+                        <span className="text-xs text-zinc-600">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">

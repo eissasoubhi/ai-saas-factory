@@ -1,6 +1,7 @@
 import {
   getSubscriptionForOrganization,
   isClosedUsageCreditPeriod,
+  isStripeMeterPeriodWithinSubmissionWindow,
   listDispatchableStripeMeterSubmissionIds,
   reconcileClosedPeriodStripeMetering,
 } from '@factory/db';
@@ -30,6 +31,9 @@ export async function POST(request: Request) {
   const periodKey = String(form.get('periodKey') ?? '').trim();
   if (!isClosedUsageCreditPeriod(periodKey)) {
     return redirectToUsage(request, { meteringError: 'period-must-be-closed' });
+  }
+  if (!isStripeMeterPeriodWithinSubmissionWindow(periodKey)) {
+    return redirectToUsage(request, { meteringError: 'period-outside-stripe-window' });
   }
 
   const eventName = process.env.STRIPE_AI_OVERAGE_METER_EVENT_NAME?.trim();

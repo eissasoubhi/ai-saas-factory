@@ -29,6 +29,10 @@ export function usageCreditPeriodEnd(periodKey: string) {
   return new Date(Date.UTC(parsed.year, parsed.month, 1) - 1_000);
 }
 
+export function periodAllowsStripeOverage(planReferences: readonly (string | null)[]) {
+  return planReferences.some((plan) => plan === 'pro');
+}
+
 export function allocateClosedPeriodOverage(
   settlements: readonly SettledUsageCost[],
   allowanceMicros: number,

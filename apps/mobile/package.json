@@ -14,9 +14,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@better-auth/expo": "1.6.25",
+    "@better-auth/expo": "1.6.28",
     "@factory/contracts": "workspace:*",
-    "better-auth": "1.6.25",
+    "better-auth": "1.6.28",
     "expo": "57.0.0",
     "expo-network": "57.0.1",
     "expo-secure-store": "57.0.3",

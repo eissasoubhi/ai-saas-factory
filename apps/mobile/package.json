@@ -18,6 +18,7 @@
     "@factory/contracts": "workspace:*",
     "better-auth": "1.6.28",
     "expo": "57.0.0",
+    "expo-linking": "57.0.9",
     "expo-network": "57.0.1",
     "expo-secure-store": "57.0.3",
     "react": "19.2.3",

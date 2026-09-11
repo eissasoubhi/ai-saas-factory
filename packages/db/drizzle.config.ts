@@ -11,6 +11,7 @@ export default defineConfig({
     './src/rag-schema.ts',
     './src/platform-schema.ts',
     './src/credits-schema.ts',
+    './src/metering-schema.ts',
   ],
   out: './drizzle',
   dbCredentials: { url: process.env.DATABASE_URL },

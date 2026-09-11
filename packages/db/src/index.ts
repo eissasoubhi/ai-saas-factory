@@ -4,8 +4,9 @@ import * as baseSchema from './schema';
 import * as ragSchema from './rag-schema';
 import * as platformSchema from './platform-schema';
 import * as creditsSchema from './credits-schema';
+import * as meteringSchema from './metering-schema';
 
-const schema = { ...baseSchema, ...ragSchema, ...platformSchema, ...creditsSchema };
+const schema = { ...baseSchema, ...ragSchema, ...platformSchema, ...creditsSchema, ...meteringSchema };
 
 let cached: ReturnType<typeof createDb> | undefined;
 
@@ -30,6 +31,9 @@ export * from './billing';
 export * from './credits';
 export * from './credits-schema';
 export * from './files';
+export * from './metering';
+export * from './metering-policy';
+export * from './metering-schema';
 export * from './observability';
 export * from './organization';
 export * from './platform';

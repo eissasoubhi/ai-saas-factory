@@ -4,6 +4,8 @@ import {
   FileIngestJobSchema,
   OUTBOUND_WEBHOOK_DELIVERY_QUEUE,
   OutboundWebhookDeliveryJobSchema,
+  STRIPE_METER_SUBMISSION_QUEUE,
+  StripeMeterSubmissionJobSchema,
 } from './index';
 
 describe('file ingestion job contract', () => {
@@ -46,5 +48,23 @@ describe('outbound webhook delivery job contract', () => {
 
   it('rejects empty delivery ids', () => {
     expect(() => OutboundWebhookDeliveryJobSchema.parse({ deliveryId: '' })).toThrow();
+  });
+});
+
+describe('Stripe meter submission job contract', () => {
+  it('contains only the durable submission id', () => {
+    expect(
+      StripeMeterSubmissionJobSchema.parse({
+        submissionId: 'submission-a',
+        stripeSecretKey: 'never-put-provider-secrets-in-jobs',
+        customerId: 'cus_hidden',
+        value: 123,
+      }),
+    ).toEqual({ submissionId: 'submission-a' });
+    expect(STRIPE_METER_SUBMISSION_QUEUE).toBe('stripe.meter.submit');
+  });
+
+  it('rejects an empty submission id', () => {
+    expect(() => StripeMeterSubmissionJobSchema.parse({ submissionId: '' })).toThrow();
   });
 });

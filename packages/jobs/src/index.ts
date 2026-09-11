@@ -5,6 +5,8 @@ export const FILE_INGEST_QUEUE = 'file.ingest';
 export const FILE_INGEST_DLQ = 'file.ingest.dlq';
 export const OUTBOUND_WEBHOOK_DELIVERY_QUEUE = 'outbound.webhook.deliver';
 export const OUTBOUND_WEBHOOK_DELIVERY_DLQ = 'outbound.webhook.deliver.dlq';
+export const STRIPE_METER_SUBMISSION_QUEUE = 'stripe.meter.submit';
+export const STRIPE_METER_SUBMISSION_DLQ = 'stripe.meter.submit.dlq';
 
 export const FileIngestJobSchema = z.object({
   organizationId: z.string().min(1),
@@ -15,8 +17,13 @@ export const OutboundWebhookDeliveryJobSchema = z.object({
   deliveryId: z.string().min(1),
 });
 
+export const StripeMeterSubmissionJobSchema = z.object({
+  submissionId: z.string().min(1),
+});
+
 export type FileIngestJob = z.infer<typeof FileIngestJobSchema>;
 export type OutboundWebhookDeliveryJob = z.infer<typeof OutboundWebhookDeliveryJobSchema>;
+export type StripeMeterSubmissionJob = z.infer<typeof StripeMeterSubmissionJobSchema>;
 
 let producerPromise: Promise<PgBoss> | null = null;
 
@@ -83,6 +90,18 @@ export async function enqueueOutboundWebhookDelivery(payload: OutboundWebhookDel
   return { id, deduplicated: id === null };
 }
 
+export async function enqueueStripeMeterSubmission(payload: StripeMeterSubmissionJob) {
+  const data = StripeMeterSubmissionJobSchema.parse(payload);
+  const boss = await jobProducer();
+  const id = await boss.send(STRIPE_METER_SUBMISSION_QUEUE, data, {
+    singletonKey: data.submissionId,
+    retryLimit: 8,
+    retryDelay: 15,
+    retryBackoff: true,
+  });
+  return { id, deduplicated: id === null };
+}
+
 export async function createWorkerBoss() {
   const boss = createBoss('worker');
   await boss.start();
@@ -101,6 +120,14 @@ export async function createWorkerBoss() {
     retryDelay: 10,
     retryBackoff: true,
     deadLetter: OUTBOUND_WEBHOOK_DELIVERY_DLQ,
+  });
+  await boss.createQueue(STRIPE_METER_SUBMISSION_DLQ);
+  await boss.createQueue(STRIPE_METER_SUBMISSION_QUEUE, {
+    policy: 'singleton',
+    retryLimit: 8,
+    retryDelay: 15,
+    retryBackoff: true,
+    deadLetter: STRIPE_METER_SUBMISSION_DLQ,
   });
   return boss;
 }

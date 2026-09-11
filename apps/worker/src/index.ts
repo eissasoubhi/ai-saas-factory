@@ -14,6 +14,8 @@ import {
   FileIngestJobSchema,
   OUTBOUND_WEBHOOK_DELIVERY_DLQ,
   OUTBOUND_WEBHOOK_DELIVERY_QUEUE,
+  STRIPE_METER_SUBMISSION_DLQ,
+  STRIPE_METER_SUBMISSION_QUEUE,
 } from '@factory/jobs';
 import {
   deleteStoredObject,
@@ -23,6 +25,10 @@ import {
 } from '@factory/storage';
 import { emitTelemetry } from '@factory/telemetry';
 import { publishWorkerOutboundEvent } from './outbound-events';
+import {
+  processStripeMeterSubmission,
+  processStripeMeterSubmissionDeadLetter,
+} from './stripe-metering';
 import { processOutboundWebhookDeadLetter, processOutboundWebhookDelivery } from './webhook-delivery';
 
 async function processFileJob(data: unknown) {
@@ -237,15 +243,36 @@ async function main() {
     }
   });
 
+  const stripeMeterWorkerId = await boss.work(STRIPE_METER_SUBMISSION_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      await processStripeMeterSubmission(job.data, String(job.id));
+    }
+  });
+
+  const stripeMeterDeadLetterWorkerId = await boss.work(STRIPE_METER_SUBMISSION_DLQ, async (jobs) => {
+    for (const job of jobs) {
+      await processStripeMeterSubmissionDeadLetter(job.data, String(job.id));
+    }
+  });
+
   emitTelemetry({
     name: 'worker.started',
     component: 'worker',
     correlationId: String(fileWorkerId),
     attributes: {
-      queues: [FILE_INGEST_QUEUE, FILE_INGEST_DLQ, OUTBOUND_WEBHOOK_DELIVERY_QUEUE, OUTBOUND_WEBHOOK_DELIVERY_DLQ],
+      queues: [
+        FILE_INGEST_QUEUE,
+        FILE_INGEST_DLQ,
+        OUTBOUND_WEBHOOK_DELIVERY_QUEUE,
+        OUTBOUND_WEBHOOK_DELIVERY_DLQ,
+        STRIPE_METER_SUBMISSION_QUEUE,
+        STRIPE_METER_SUBMISSION_DLQ,
+      ],
       fileDeadLetterWorkerId: String(fileDeadLetterWorkerId),
       webhookWorkerId: String(webhookWorkerId),
       webhookDeadLetterWorkerId: String(webhookDeadLetterWorkerId),
+      stripeMeterWorkerId: String(stripeMeterWorkerId),
+      stripeMeterDeadLetterWorkerId: String(stripeMeterDeadLetterWorkerId),
     },
   });
 

@@ -155,6 +155,53 @@ export async function listStripeMeterSubmissionsForOrganization(input: {
     .limit(limit);
 }
 
+export async function listDispatchableStripeMeterSubmissionIds(input: {
+  organizationId: string;
+  periodKey: string;
+  limit?: number;
+}) {
+  const limit = Math.max(1, Math.min(1_000, Math.trunc(input.limit ?? 500)));
+  const db = database();
+  return db
+    .select({ id: stripeMeterSubmission.id })
+    .from(stripeMeterSubmission)
+    .where(
+      and(
+        eq(stripeMeterSubmission.organizationId, input.organizationId),
+        eq(stripeMeterSubmission.periodKey, input.periodKey),
+        inArray(stripeMeterSubmission.status, ['pending', 'failed']),
+      ),
+    )
+    .orderBy(asc(stripeMeterSubmission.createdAt), asc(stripeMeterSubmission.id))
+    .limit(limit);
+}
+
+export async function resetStripeMeterSubmissionForRetry(input: {
+  organizationId: string;
+  submissionId: string;
+  now?: Date;
+}) {
+  const now = input.now ?? new Date();
+  const db = database();
+  const [row] = await db
+    .update(stripeMeterSubmission)
+    .set({
+      status: 'pending',
+      processingStartedAt: null,
+      lastError: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(stripeMeterSubmission.id, input.submissionId),
+        eq(stripeMeterSubmission.organizationId, input.organizationId),
+        inArray(stripeMeterSubmission.status, ['failed', 'dead']),
+      ),
+    )
+    .returning({ id: stripeMeterSubmission.id });
+  return row ?? null;
+}
+
 export async function getStripeMeterSubmissionForWorker(id: string) {
   const db = database();
   const [row] = await db.select().from(stripeMeterSubmission).where(eq(stripeMeterSubmission.id, id)).limit(1);

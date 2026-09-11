@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allocateClosedPeriodOverage,
   isClosedUsageCreditPeriod,
+  isStripeMeterPeriodWithinSubmissionWindow,
   periodAllowsStripeOverage,
   stripeMeterProviderIdentifier,
   usageCreditPeriodEnd,
@@ -41,6 +42,13 @@ describe('closed-period Stripe metering policy', () => {
     expect(isClosedUsageCreditPeriod('2026-10', now)).toBe(false);
     expect(isClosedUsageCreditPeriod('2026-13', now)).toBe(false);
     expect(isClosedUsageCreditPeriod('bad', now)).toBe(false);
+  });
+
+  it('rejects closed periods whose meter timestamp is older than Stripe permits', () => {
+    const now = new Date('2026-09-11T12:00:00Z');
+    expect(isStripeMeterPeriodWithinSubmissionWindow('2026-08', now)).toBe(true);
+    expect(isStripeMeterPeriodWithinSubmissionWindow('2026-07', now)).toBe(false);
+    expect(isStripeMeterPeriodWithinSubmissionWindow('2026-09', now)).toBe(false);
   });
 
   it('meters the closed period at its final UTC second', () => {

@@ -1,11 +1,8 @@
 import { authClient } from './auth-client';
 import { mobileApiBaseUrl } from './config';
+import { withSessionCookie } from './http-headers';
 
-export function withSessionCookie(headers: HeadersInit | undefined, cookie: string | null | undefined) {
-  const result = new Headers(headers);
-  if (cookie) result.set('Cookie', cookie);
-  return result;
-}
+export { withSessionCookie } from './http-headers';
 
 export async function mobileFetch(path: string, init: RequestInit = {}) {
   const cookie = await authClient.getCookie();

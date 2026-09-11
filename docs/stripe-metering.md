@@ -8,7 +8,7 @@ Stripe is never fed reservation rows. Reconciliation reads only settled `ai.gene
 
 A period is eligible for metered overage only when its own immutable ledger contains a `plan.monthly` grant whose plan reference is `pro`. The current subscription plan is deliberately not used for historical eligibility, so a later upgrade cannot retroactively make an older Starter month billable.
 
-Only closed UTC months can be reconciled. Each Stripe event is timestamped at the final UTC second of the reconciled month rather than at delivery time.
+Only closed UTC months can be reconciled. Each Stripe event is timestamped at the final UTC second of the reconciled month rather than at delivery time. Stripe accepts meter-event timestamps only within its recent submission window (35 calendar days in the current API), so reconciliation rejects a period whose month-end timestamp is already too old.
 
 ## Stripe setup
 
@@ -31,7 +31,7 @@ Workspace owners/admins open **Settings → AI usage**, choose a closed month an
 The server:
 
 1. derives the workspace from the authenticated Better Auth session;
-2. verifies that the month is closed;
+2. verifies that the month is closed and still inside Stripe's timestamp window;
 3. reloads the Stripe customer from the workspace subscription;
 4. acquires a PostgreSQL advisory lock for that workspace/month;
 5. reads immutable monthly grants/adjustments and settled AI-generation costs;
@@ -50,6 +50,7 @@ Failed/dead submissions can be re-queued from the usage screen. A retry only ope
 
 ## Operator checks before enabling production overage
 
+- Reconcile promptly after month close so the event timestamp remains inside Stripe's accepted window.
 - Run a Stripe test-mode reconciliation for a closed synthetic period.
 - Confirm the event appears on the intended Stripe customer and meter.
 - Verify the meter's price interprets one submitted unit as one USD micro according to your billing design.

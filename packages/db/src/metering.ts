@@ -5,6 +5,7 @@ import { database } from './index';
 import {
   allocateClosedPeriodOverage,
   isClosedUsageCreditPeriod,
+  periodAllowsStripeOverage,
   stripeMeterProviderIdentifier,
   usageCreditPeriodEnd,
 } from './metering-policy';
@@ -40,7 +41,7 @@ export async function reconcileClosedPeriodStripeMetering(input: {
     const lockKey = `stripe-meter-reconcile:${input.organizationId}:${input.periodKey}`;
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
 
-    const [[creditRow], settlements] = await Promise.all([
+    const [[creditRow], planGrants, settlements] = await Promise.all([
       tx
         .select({ value: sum(usageCreditLedger.amountMicros) })
         .from(usageCreditLedger)
@@ -49,6 +50,17 @@ export async function reconcileClosedPeriodStripeMetering(input: {
             eq(usageCreditLedger.organizationId, input.organizationId),
             eq(usageCreditLedger.periodKey, input.periodKey),
             or(eq(usageCreditLedger.kind, 'grant'), eq(usageCreditLedger.kind, 'adjustment')),
+          ),
+        ),
+      tx
+        .select({ plan: usageCreditLedger.referenceId })
+        .from(usageCreditLedger)
+        .where(
+          and(
+            eq(usageCreditLedger.organizationId, input.organizationId),
+            eq(usageCreditLedger.periodKey, input.periodKey),
+            eq(usageCreditLedger.kind, 'grant'),
+            eq(usageCreditLedger.source, 'plan.monthly'),
           ),
         ),
       tx
@@ -73,7 +85,10 @@ export async function reconcileClosedPeriodStripeMetering(input: {
       ledgerEntryId: row.ledgerEntryId,
       actualCostMicros: settlementActualCostMicros(row.metadata),
     }));
-    const allocations = allocateClosedPeriodOverage(settled, allowanceMicros);
+    const overageAllowedForPeriod = periodAllowsStripeOverage(planGrants.map((row) => row.plan));
+    const allocations = overageAllowedForPeriod
+      ? allocateClosedPeriodOverage(settled, allowanceMicros)
+      : [];
     const createdSubmissionIds: string[] = [];
 
     for (const allocation of allocations) {
@@ -102,6 +117,7 @@ export async function reconcileClosedPeriodStripeMetering(input: {
       periodKey: input.periodKey,
       meteredAt,
       allowanceMicros,
+      overageAllowedForPeriod,
       settledCostMicros: settled.reduce((total, row) => total + row.actualCostMicros, 0),
       overageMicros: allocations.reduce((total, row) => total + row.valueMicros, 0),
       createdSubmissionIds,
@@ -168,7 +184,10 @@ export async function claimStripeMeterSubmission(id: string, now = new Date(), l
           inArray(stripeMeterSubmission.status, ['pending', 'failed']),
           and(
             eq(stripeMeterSubmission.status, 'processing'),
-            or(isNull(stripeMeterSubmission.processingStartedAt), lt(stripeMeterSubmission.processingStartedAt, staleBefore)),
+            or(
+              isNull(stripeMeterSubmission.processingStartedAt),
+              lt(stripeMeterSubmission.processingStartedAt, staleBefore),
+            ),
           ),
         ),
       ),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allocateClosedPeriodOverage,
   isClosedUsageCreditPeriod,
+  periodAllowsStripeOverage,
   stripeMeterProviderIdentifier,
   usageCreditPeriodEnd,
 } from './metering-policy';
@@ -25,6 +26,12 @@ describe('closed-period Stripe metering policy', () => {
 
   it('never emits reservation-only usage', () => {
     expect(allocateClosedPeriodOverage([], 100_000)).toEqual([]);
+  });
+
+  it('allows metered overage only when the closed period actually had a pro grant', () => {
+    expect(periodAllowsStripeOverage(['starter'])).toBe(false);
+    expect(periodAllowsStripeOverage(['starter', 'pro'])).toBe(true);
+    expect(periodAllowsStripeOverage([null, 'free'])).toBe(false);
   });
 
   it('rejects current, future and malformed periods', () => {

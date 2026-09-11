@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { withSessionCookie } from './api-client';
+import { withSessionCookie } from './http-headers';
 
 describe('withSessionCookie', () => {
   it('preserves caller headers and adds the Better Auth cookie', () => {

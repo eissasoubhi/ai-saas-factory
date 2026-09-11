@@ -5,6 +5,7 @@ import { database } from './index';
 import {
   allocateClosedPeriodOverage,
   isClosedUsageCreditPeriod,
+  isStripeMeterPeriodWithinSubmissionWindow,
   periodAllowsStripeOverage,
   stripeMeterProviderIdentifier,
   usageCreditPeriodEnd,
@@ -29,6 +30,9 @@ export async function reconcileClosedPeriodStripeMetering(input: {
   const now = input.now ?? new Date();
   if (!isClosedUsageCreditPeriod(input.periodKey, now)) {
     throw new Error('Stripe metering can only reconcile a closed UTC credit period');
+  }
+  if (!isStripeMeterPeriodWithinSubmissionWindow(input.periodKey, now)) {
+    throw new Error('Stripe metering period is outside the provider submission window');
   }
   if (!input.providerCustomerId.trim()) throw new Error('Stripe customer ID is required');
   if (!input.eventName.trim() || input.eventName.length > 100) {

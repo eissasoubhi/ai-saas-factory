@@ -139,26 +139,30 @@
 - [x] plan-specific included-credit and overage policy
 - [x] atomic reservation / settlement against measured AI cost
 - [x] customer-facing monthly credit balance and allowance status
-- [ ] durable Stripe meter-event submission and reconciliation
-- [ ] Stripe metered-billing integration example and test-mode smoke
+- [x] durable Stripe meter-event submission and reconciliation
+- [x] Stripe metered-billing integration example
+- [ ] Stripe metered-billing test-mode smoke
 
 ## V0.5 — mobile
 
-- [ ] auth/session flow for Expo
-- [ ] organization switcher
-- [ ] shared API client
+- [x] auth/session flow for Expo
+- [x] organization switcher
+- [x] shared API client
+- [ ] mobile dashboard, usage and read-only files (#30)
 - [ ] RevenueCat subscription example
 - [ ] push notification foundation
-- [ ] deep links
+- [x] deep-link scheme and auth callback foundation
+- [ ] production deep-link verification
 - [ ] EAS build/deploy documentation
 
 ## V0.6 — commercial launch
 
 - [ ] polished demo application
-- [ ] installation wizard / bootstrap script
+- [x] reproducible bootstrap script
+- [x] production environment validator and release checklist
 - [ ] complete documentation site
-- [ ] deployment guides
-- [ ] customer license
-- [ ] changelog/versioning policy
+- [x] provider-neutral deployment guides
+- [ ] final reviewed customer license
+- [x] changelog/versioning policy
 - [ ] sample vertical app
 - [ ] launch page, screenshots and demo video

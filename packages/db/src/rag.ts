@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { storageRetrievalQuota } from '@factory/entitlements';
 import { and, cosineDistance, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { assertOrganizationScope } from './ai-policy';
 import { database } from './index';
 import { documentChunk } from './rag-schema';
-import { storedFile } from './schema';
+import { storedFile, subscription } from './schema';
 
 export type PersistedDocumentChunk = {
   chunkIndex: number;
@@ -104,6 +105,14 @@ export async function deleteDocumentChunksForFile(organizationId: string, fileId
   return rows.length;
 }
 
+function activePlanFromSubscription(
+  row: { plan: string; status: string } | null | undefined,
+): 'free' | 'starter' | 'pro' {
+  if (!row || (row.status !== 'active' && row.status !== 'trialing')) return 'free';
+  if (row.plan === 'starter' || row.plan === 'pro') return row.plan;
+  return 'free';
+}
+
 export async function searchDocumentChunks(input: {
   organizationId: string;
   embedding: number[];
@@ -114,7 +123,15 @@ export async function searchDocumentChunks(input: {
     throw new Error(`Query embedding has ${input.embedding.length} dimensions; expected 1536`);
   }
   const db = database();
-  const limit = Math.min(Math.max(input.limit ?? 6, 1), 20);
+  const [subscriptionSnapshot] = await db
+    .select({ plan: subscription.plan, status: subscription.status })
+    .from(subscription)
+    .where(eq(subscription.organizationId, input.organizationId))
+    .limit(1);
+  const plan = activePlanFromSubscription(subscriptionSnapshot);
+  const quota = storageRetrievalQuota(plan);
+  const requestedLimit = Math.min(Math.max(input.limit ?? 6, 1), 20);
+  const limit = Math.min(requestedLimit, quota.retrievalTopK);
   const minSimilarity = Math.min(Math.max(input.minSimilarity ?? 0.3, -1), 1);
   const similarity = sql<number>`1 - (${cosineDistance(documentChunk.embedding, input.embedding)})`;
 

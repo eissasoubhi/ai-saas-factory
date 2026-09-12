@@ -6,7 +6,7 @@ import { storedFile } from './schema';
 
 export type StoredFileStatus = 'uploading' | 'uploaded' | 'processing' | 'ready' | 'failed' | 'deleted';
 
-export async function createStoredFile(input: {
+type CreateStoredFileInput = {
   id?: string;
   organizationId: string;
   createdByUserId: string;
@@ -15,7 +15,9 @@ export async function createStoredFile(input: {
   contentType: string;
   expectedSizeBytes: number;
   purpose?: string;
-}) {
+};
+
+export async function createStoredFile(input: CreateStoredFileInput) {
   const db = database();
   const [row] = await db
     .insert(storedFile)
@@ -33,6 +35,114 @@ export async function createStoredFile(input: {
     .returning();
   if (!row) throw new Error('Unable to create stored file');
   return row;
+}
+
+export type StoredFileQuota = {
+  fileCount: number;
+  bytes: number;
+};
+
+export type StoredFileQuotaReservation =
+  | {
+      allowed: true;
+      file: typeof storedFile.$inferSelect;
+      currentFileCount: number;
+      currentBytes: number;
+      fileCountAfterReservation: number;
+      bytesAfterReservation: number;
+    }
+  | {
+      allowed: false;
+      reason: 'file_count_limit' | 'storage_bytes_limit';
+      currentFileCount: number;
+      currentBytes: number;
+      fileCountAfterReservation: number;
+      bytesAfterReservation: number;
+    };
+
+export async function createStoredFileWithinQuota(
+  input: CreateStoredFileInput & { quota: StoredFileQuota },
+): Promise<StoredFileQuotaReservation> {
+  if (!Number.isSafeInteger(input.expectedSizeBytes) || input.expectedSizeBytes < 0) {
+    throw new Error('Expected file size must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(input.quota.fileCount) || input.quota.fileCount < 1) {
+    throw new Error('Stored file count quota must be a positive safe integer');
+  }
+  if (!Number.isSafeInteger(input.quota.bytes) || input.quota.bytes < 1) {
+    throw new Error('Stored file byte quota must be a positive safe integer');
+  }
+
+  const db = database();
+  return db.transaction(async (tx) => {
+    const lockKey = `storage-quota:${input.organizationId}`;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+
+    const [usage] = await tx
+      .select({
+        fileCount: sql<number>`count(*)`,
+        bytes: sql<number>`coalesce(sum(coalesce(${storedFile.actualSizeBytes}, ${storedFile.expectedSizeBytes})), 0)`,
+      })
+      .from(storedFile)
+      .where(and(eq(storedFile.organizationId, input.organizationId), isNull(storedFile.deletedAt)));
+
+    const currentFileCount = Number(usage?.fileCount ?? 0);
+    const currentBytes = Number(usage?.bytes ?? 0);
+    if (!Number.isSafeInteger(currentFileCount) || !Number.isSafeInteger(currentBytes)) {
+      throw new Error('Stored file quota accounting exceeded the safe integer range');
+    }
+    const fileCountAfterReservation = currentFileCount + 1;
+    const bytesAfterReservation = currentBytes + input.expectedSizeBytes;
+    if (!Number.isSafeInteger(bytesAfterReservation)) {
+      throw new Error('Stored file quota reservation exceeded the safe integer range');
+    }
+
+    if (fileCountAfterReservation > input.quota.fileCount) {
+      return {
+        allowed: false as const,
+        reason: 'file_count_limit' as const,
+        currentFileCount,
+        currentBytes,
+        fileCountAfterReservation,
+        bytesAfterReservation,
+      };
+    }
+    if (bytesAfterReservation > input.quota.bytes) {
+      return {
+        allowed: false as const,
+        reason: 'storage_bytes_limit' as const,
+        currentFileCount,
+        currentBytes,
+        fileCountAfterReservation,
+        bytesAfterReservation,
+      };
+    }
+
+    const [file] = await tx
+      .insert(storedFile)
+      .values({
+        id: input.id ?? randomUUID(),
+        organizationId: input.organizationId,
+        createdByUserId: input.createdByUserId,
+        objectKey: input.objectKey,
+        originalName: input.originalName,
+        contentType: input.contentType,
+        expectedSizeBytes: input.expectedSizeBytes,
+        purpose: input.purpose ?? 'knowledge',
+        status: 'uploading',
+      })
+      .returning();
+    if (!file) throw new Error('Unable to reserve stored file');
+
+    return {
+      allowed: true as const,
+      file,
+      currentFileCount,
+      currentBytes,
+      fileCountAfterReservation,
+      bytesAfterReservation,
+    };
+  });
 }
 
 export async function getStoredFileForOrganization(organizationId: string, fileId: string) {

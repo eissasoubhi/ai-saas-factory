@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "bootstrap": "node scripts/bootstrap.mjs",
     "check:env": "node scripts/check-env.mjs",
+    "smoke:providers": "pnpm --filter @factory/worker exec tsx ../web/scripts/provider-smoke.ts",
     "db:generate": "pnpm --filter @factory/db db:generate",
     "db:migrate": "pnpm --filter @factory/db db:migrate",
     "db:studio": "pnpm --filter @factory/db db:studio",

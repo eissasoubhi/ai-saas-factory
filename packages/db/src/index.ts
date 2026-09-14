@@ -38,4 +38,5 @@ export * from './observability';
 export * from './organization';
 export * from './platform';
 export * from './platform-extra';
+export * from './provider-smoke';
 export * from './rag';

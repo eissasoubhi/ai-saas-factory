@@ -24,12 +24,18 @@ Resolve every error. Warnings are allowed only when the corresponding optional f
 
 ## External smoke evidence
 
-Capture pass/fail plus timestamp for:
+With disposable/test credentials, run the real provider harness documented in `docs/provider-smoke.md`:
+
+```bash
+OPENAI_API_KEY=... DATABASE_URL=postgresql://... pnpm smoke:providers
+```
+
+Set `PROVIDER_SMOKE_STORAGE=true` plus test S3/R2 configuration when the storage provider should be exercised too. The command covers configured AI generation, embeddings + pgvector retrieval and optional server-side object upload/read/delete. It intentionally does not replace the browser CORS check.
+
+Also capture pass/fail plus timestamp for:
 
 - Stripe test Checkout, portal and signed webhook
-- one real AI generation with usage/cost persistence
-- one S3/R2 browser upload, verification and download
-- one document extraction/embedding/retrieval cycle
+- one S3/R2 **browser** upload, verification and download to validate CORS
 - one outbound signed customer webhook to public HTTPS
 - one transactional email verification/reset flow
 

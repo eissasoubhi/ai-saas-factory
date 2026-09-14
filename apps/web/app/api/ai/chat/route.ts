@@ -16,7 +16,7 @@ import {
   settleUsageCreditReservation,
 } from '@factory/db';
 import { embedQuery } from '@factory/embeddings';
-import { aiCreditPolicy, entitlement } from '@factory/entitlements';
+import { aiCreditPolicy, entitlement, storageRetrievalQuota } from '@factory/entitlements';
 import { correlationIdFromHeaders, emitTelemetry } from '@factory/telemetry';
 import { streamText, type ModelMessage } from 'ai';
 import { estimateAiCostMicros, parseModelPricingJson } from '@/lib/ai-pricing';
@@ -115,6 +115,7 @@ export async function POST(request: Request) {
   const plan = paidPlanForSubscription(snapshot);
   const monthlyLimit = entitlement(plan, 'ai_requests_monthly') as number;
   const creditPolicy = aiCreditPolicy(plan);
+  const storageQuota = storageRetrievalQuota(plan);
   const reservationMicros = creditReservationMicros();
   const requestId = crypto.randomUUID();
 
@@ -230,7 +231,7 @@ export async function POST(request: Request) {
       retrievedChunks = await searchDocumentChunks({
         organizationId,
         embedding: query.embedding,
-        limit: retrieval.limit,
+        limit: Math.min(retrieval.limit, storageQuota.retrievalTopK),
         minSimilarity: retrieval.minSimilarity,
       });
       if (query.tokens > 0) {

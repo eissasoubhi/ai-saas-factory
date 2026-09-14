@@ -99,7 +99,7 @@
 - [x] document deletion / re-index flow
 - [x] extraction, chunking, prompt-boundary and embedding-config tests
 - [x] defense-in-depth tenant assertion on retrieved rows
-- [ ] storage and retrieval quotas
+- [x] storage and retrieval quotas
 - [ ] real pgvector + S3/R2 + embedding-provider integration smoke test
 
 ## V0.4C1 — audit, usage and observability
@@ -148,7 +148,7 @@
 - [x] auth/session flow for Expo
 - [x] organization switcher
 - [x] shared API client
-- [ ] mobile dashboard, usage and read-only files (#30)
+- [x] mobile dashboard, usage and read-only files (#30)
 - [ ] RevenueCat subscription example
 - [ ] push notification foundation
 - [x] deep-link scheme and auth callback foundation

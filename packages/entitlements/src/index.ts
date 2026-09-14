@@ -1,6 +1,7 @@
 import type { PlanId } from '@factory/contracts';
 
 export * from './credits';
+export * from './rag-quotas';
 
 export type Feature =
   | 'organizations'

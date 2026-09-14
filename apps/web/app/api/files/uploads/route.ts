@@ -1,4 +1,10 @@
-import { createStoredFile } from '@factory/db';
+import {
+  createStoredFileWithinQuota,
+  getSubscriptionForOrganization,
+  markStoredFileDeleted,
+  paidPlanForSubscription,
+} from '@factory/db';
+import { storageRetrievalQuota } from '@factory/entitlements';
 import {
   createPresignedUpload,
   safeFilename,
@@ -49,8 +55,59 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: configurationError ? 503 : 400 });
   }
 
+  const subscription = await getSubscriptionForOrganization(organizationId);
+  const plan = paidPlanForSubscription(subscription);
+  const quota = storageRetrievalQuota(plan);
   const fileId = crypto.randomUUID();
+  const sanitizedFilename = safeFilename(filename);
   const objectKey = storageObjectKey({ organizationId, fileId, filename });
+
+  const reservation = await createStoredFileWithinQuota({
+    id: fileId,
+    organizationId,
+    createdByUserId: session.user.id,
+    objectKey,
+    originalName: sanitizedFilename,
+    contentType: policy.contentType,
+    expectedSizeBytes: policy.expectedSizeBytes,
+    purpose: 'knowledge',
+    quota: { fileCount: quota.fileCount, bytes: quota.bytes },
+  });
+  if (!reservation.allowed) {
+    emitTelemetry({
+      name: 'web.file.storage_quota_rejected',
+      level: 'warn',
+      component: 'web',
+      correlationId,
+      durationMs: Date.now() - startedAt,
+      organizationId,
+      userId: session.user.id,
+      attributes: {
+        plan,
+        reason: reservation.reason,
+        currentFileCount: reservation.currentFileCount,
+        currentBytes: reservation.currentBytes,
+        requestedBytes: policy.expectedSizeBytes,
+        fileCountLimit: quota.fileCount,
+        byteLimit: quota.bytes,
+      },
+    });
+    return Response.json(
+      {
+        error:
+          reservation.reason === 'file_count_limit'
+            ? `Stored file limit reached for the ${plan} plan.`
+            : `Storage byte limit reached for the ${plan} plan.`,
+        reason: reservation.reason,
+        usage: {
+          fileCount: reservation.currentFileCount,
+          bytes: reservation.currentBytes,
+        },
+        quota: { fileCount: quota.fileCount, bytes: quota.bytes },
+      },
+      { status: 409 },
+    );
+  }
 
   let upload;
   try {
@@ -61,22 +118,12 @@ export async function POST(request: Request) {
       config,
     });
   } catch (error) {
+    await markStoredFileDeleted(organizationId, fileId).catch(() => undefined);
     return Response.json(
       { error: error instanceof Error ? error.message : 'Unable to create upload URL.' },
       { status: 503 },
     );
   }
-
-  await createStoredFile({
-    id: fileId,
-    organizationId,
-    createdByUserId: session.user.id,
-    objectKey,
-    originalName: safeFilename(filename),
-    contentType: policy.contentType,
-    expectedSizeBytes: policy.expectedSizeBytes,
-    purpose: 'knowledge',
-  });
 
   await recordAuditEvent({
     organizationId,
@@ -88,6 +135,7 @@ export async function POST(request: Request) {
       contentType: policy.contentType,
       expectedSizeBytes: policy.expectedSizeBytes,
       purpose: 'knowledge',
+      plan,
     },
     correlationId,
   });
@@ -103,13 +151,14 @@ export async function POST(request: Request) {
       contentType: policy.contentType,
       expectedSizeBytes: policy.expectedSizeBytes,
       purpose: 'knowledge',
+      plan,
     },
   });
 
   return Response.json({
     file: {
       id: fileId,
-      filename: safeFilename(filename),
+      filename: sanitizedFilename,
       contentType: policy.contentType,
       sizeBytes: policy.expectedSizeBytes,
       status: 'uploading',

@@ -82,7 +82,7 @@ const docs = {
   'platform-api': {
     title: 'Platform API and webhooks',
     summary: 'Organization API keys and signed outbound webhooks provide a customer integration boundary with explicit scopes and retries.',
-    source: 'docs/platform-api.md',
+    source: 'docs/platform-api-webhooks.md',
     bullets: [
       'API key hashes are stored instead of raw bearer tokens.',
       'Tenant context is derived from the persisted API key, never from browser organization headers.',
